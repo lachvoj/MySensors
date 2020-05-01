@@ -39,3 +39,33 @@ static char convertI2H(const uint8_t i)
 		return 'A' + k - 10;
 	}
 }
+
+static int timingneutralMemcmp(const void* a, const void* b, size_t sz)
+{
+	int retVal;
+	size_t i;
+	int done = 0;
+	const uint8_t* ptrA = (const uint8_t*)a;
+	const uint8_t* ptrB = (const uint8_t*)b;
+	for (i = 0; i < sz; i++) {
+		if (ptrA[i] == ptrB[i]) {
+			if (done > 0) {
+				done = 1;
+			} else {
+				done = 0;
+			}
+		} else {
+			if (done > 0) {
+				done = 2;
+			} else {
+				done = 3;
+			}
+		}
+	}
+	if (done > 0) {
+		retVal = -1;
+	} else {
+		retVal = 0;
+	}
+	return retVal;
+}
