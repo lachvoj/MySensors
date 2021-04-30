@@ -301,7 +301,12 @@ MY_DEFAULT_RX_LED_PIN in your sketch instead to enable LEDs
 #else
 #define __SX126xCNT 0   //!< __SX126xCNT
 #endif
-#define MY_TRANSPORT_COUNT (__RF24CNT + __NRF5ESBCNT + __RFM69CNT + __RFM95CNT + __RS485CNT + _PJONCNT + __SX126xCNT)
+#if defined(MY_CAN)
+#define __CANCNT 1	//!< __CANCNT
+#else
+#define __CANCNT 0	//!< __CANCNT
+#endif
+#define MY_TRANSPORT_COUNT (__RF24CNT + __NRF5ESBCNT + __RFM69CNT + __RFM95CNT + __RS485CNT + _PJONCNT + __SX126xCNT + __CANCNT)
 
 #if (MY_TRANSPORT_COUNT > 1)
 // more than 1 transport requires RX queue
@@ -421,6 +426,9 @@ MY_DEFAULT_RX_LED_PIN in your sketch instead to enable LEDs
 #elif defined(MY_PJON)
 #include "hal/transport/PJON/driver/PJON.h"
 #include "hal/transport/PJON/driver/PJONSoftwareBitBang.h"
+#elif defined(MY_CAN)
+#include "hal/transport/CAN/MyTransportCAN.cpp"
+#endif
 #if (PJON_BROADCAST == 0)
 #error "You must change PJON_BROADCAST to BROADCAST_ADDRESS (255u) and PJON_NOT_ASSIGNED to other one."
 #endif
