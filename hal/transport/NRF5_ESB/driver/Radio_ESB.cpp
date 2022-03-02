@@ -20,7 +20,6 @@
 
 #include "Radio.h"
 #include "Radio_ESB.h"
-#include "hal/architecture/NRF5/MyHwNRF5.h"
 #include "drivers/CircularBuffer/CircularBuffer.h"
 
 // internal functions
@@ -32,12 +31,12 @@ void print_radio_stats();
 
 // RX Buffer
 static NRF5_ESB_Packet rx_circular_buffer_buffer[MY_NRF5_ESB_RX_BUFFER_SIZE];
-// Poiter to the active buffer
-static NRF5_ESB_Packet rx_tx_buffer;
+// Pointer to rx circular buffer
+static NRF5_ESB_Packet rx_buffer;
 // Circular buffer
 static CircularBuffer<NRF5_ESB_Packet>
 rx_circular_buffer(rx_circular_buffer_buffer, MY_NRF5_ESB_RX_BUFFER_SIZE);
-// Dedect duplicate packages for every pipe available
+// Detect duplicate packages for every pipe available
 static volatile uint32_t package_ids[8];
 
 // Flag for ack received
@@ -63,6 +62,15 @@ static int8_t tx_power_level = (MY_NRF5_ESB_PA_LEVEL << RADIO_TXPOWER_TXPOWER_Po
 static bool NRF5_ESB_initialize()
 {
 	NRF5_RADIO_DEBUG(PSTR("NRF5:INIT:ESB\n"));
+#if defined(MY_NRF5_PA_LNA)
+	NRF5_RADIO_DEBUG(PSTR("NRF5:INIT:PA LNA\n"));
+	hwPinMode(MY_NRF5_CPS_PIN, OUTPUT);
+	hwPinMode(MY_NRF5_CHL_PIN, OUTPUT);
+	hwPinMode(MY_NRF5_PA_PIN, OUTPUT);
+	hwPinMode(MY_NRF5_LNA_PIN, OUTPUT);
+	hwDigitalWrite(MY_NRF5_CHL_PIN, HIGH); // CHL = TX HIGH POWER
+	hwDigitalWrite(MY_NRF5_CPS_PIN, LOW); // CPS = RX/TX BYPASS
+#endif
 
 #if defined(SOFTDEVICE_PRESENT)
 	// Disable the SoftDevice; requires NRF5 SDK available
@@ -276,8 +284,19 @@ static void NRF5_ESB_startListening()
 	if (NRF_RADIO->POWER == 0) {
 		NRF5_ESB_initialize();
 	}
+#if defined(MY_NRF5_PA_LNA)
+	hwDigitalWrite(MY_NRF5_PA_PIN, LOW); // disable PA
+	hwDigitalWrite(MY_NRF5_LNA_PIN, HIGH); // enable LNA
+#endif
+#ifdef NRF52
+	// Fix PAN#102 and PAN#106
+	*((volatile uint32_t *)0x40001774) = (*((volatile uint32_t *)0x40001774) & 0xFFFFFFFE) | 0x01000000;
+#endif
 
-	// Bring radio into RX mode
+	// Enable Ready interrupt
+	NRF_RADIO->INTENSET = RADIO_INTENSET_READY_Msk;
+
+	// Enable RX when ready, Enable RX after disabling task
 	NRF_RADIO->SHORTS = NRF5_ESB_SHORTS_RX;
 
 	// Switch to RX
@@ -293,7 +312,7 @@ static bool NRF5_ESB_isDataAvailable()
 	return rx_circular_buffer.available() > 0;
 }
 
-static uint8_t NRF5_ESB_readMessage(void *data)
+static uint8_t NRF5_ESB_readMessage(void *data, const uint8_t maxBufSize)
 {
 	uint8_t ret = 0;
 
@@ -302,7 +321,7 @@ static uint8_t NRF5_ESB_readMessage(void *data)
 	// Nothing to read?
 	if (buffer != NULL) {
 		// copy content
-		memcpy(data, buffer->data, buffer->len);
+		(void)memcpy(data, (const void *)buffer->data, min(maxBufSize, buffer->len));
 		ret = buffer->len;
 		rssi_rx = 0-buffer->rssi;
 
@@ -320,6 +339,99 @@ static uint8_t NRF5_ESB_readMessage(void *data)
 	return ret;
 }
 
+void NRF5_ESB_endtx();
+void NRF5_ESB_starttx()
+{
+#if defined(MY_NRF5_PA_LNA)
+	hwDigitalWrite(MY_NRF5_PA_PIN, HIGH); // enable PA
+	hwDigitalWrite(MY_NRF5_LNA_PIN, HIGH); // enable LNA for ACK
+#endif
+	if (tx_retries > 0) {
+		// Prevent radio to write into TX memory while receiving
+		if (NRF_RADIO->PACKETPTR != (uint32_t)&tx_buffer) {
+			// Disable shorts
+			NRF_RADIO->SHORTS = 0;
+			// Disable radio
+			NRF_RADIO->TASKS_DISABLE = 1;
+		}
+
+		// Mark TX as unfinised
+		events_end_tx = false;
+
+		// Configure TX address to address at index NRF5_ESB_TX_ADDR
+		NRF_RADIO->TXADDRESS = NRF5_ESB_TX_ADDR;
+
+		// Enable TX when ready, Enable TX after disabling task
+		NRF_RADIO->SHORTS = NRF5_ESB_SHORTS_TX;
+
+		// reset timer
+		NRF_RESET_EVENT(NRF5_RADIO_TIMER->EVENTS_COMPARE[3]);
+		_stopTimer();
+		NRF5_RADIO_TIMER->TASKS_CLEAR = 1;
+		// Set retransmit time
+		NRF5_RADIO_TIMER->CC[3] = NRF5_ESB_ARD - NRF5_ESB_RAMP_UP_TIME;
+		// Set radio disable time to ACK_WAIT time
+		NRF5_RADIO_TIMER->CC[1] = NRF5_ESB_ACK_WAIT;
+
+		/** Configure PPI (Programmable peripheral interconnect) */
+		// Start timer on END event
+		NRF_PPI->CH[NRF5_ESB_PPI_TIMER_START].EEP = (uint32_t)&NRF_RADIO->EVENTS_END;
+		NRF_PPI->CH[NRF5_ESB_PPI_TIMER_START].TEP = (uint32_t)&NRF5_RADIO_TIMER->TASKS_START;
+#ifdef NRF52
+		NRF_PPI->FORK[NRF5_ESB_PPI_TIMER_START].TEP = 0;
+#endif
+
+#ifndef NRF5_ESB_USE_PREDEFINED_PPI
+		// Disable Radio after CC[1]
+		NRF_PPI->CH[NRF5_ESB_PPI_TIMER_RADIO_DISABLE].EEP = (uint32_t)&NRF5_RADIO_TIMER->EVENTS_COMPARE[1];
+		NRF_PPI->CH[NRF5_ESB_PPI_TIMER_RADIO_DISABLE].TEP = (uint32_t)&NRF_RADIO->TASKS_DISABLE;
+#ifdef NRF52
+		NRF_PPI->CH[NRF5_ESB_PPI_TIMER_RADIO_DISABLE].TEP = 0;
+#endif
+#endif
+
+		// Set PPI
+		NRF_PPI->CHENSET = NRF5_ESB_PPI_BITS;
+
+		// Disable Ready interrupt
+		NRF_RADIO->INTENCLR = RADIO_INTENSET_READY_Msk;
+
+		// Set buffer
+		NRF_RADIO->PACKETPTR = (uint32_t)&tx_buffer;
+
+		// Switch to TX
+		if (NRF_RADIO->STATE == RADIO_STATE_STATE_Disabled) {
+			NRF_RADIO->TASKS_TXEN = 1;
+		} else {
+			NRF_RADIO->TASKS_DISABLE = 1;
+		}
+	} else {
+		// finished TX
+		NRF5_ESB_endtx();
+	}
+	tx_retries--;
+}
+
+void NRF5_ESB_endtx()
+{
+#if defined(MY_NRF5_PA_LNA)
+	hwDigitalWrite(MY_NRF5_PA_PIN, LOW); // disable PA
+	hwDigitalWrite(MY_NRF5_LNA_PIN, HIGH); // enable LNA
+#endif
+	// Clear PPI
+	NRF_PPI->CHENCLR = NRF5_ESB_PPI_BITS;
+	// Enable Ready interrupt
+	NRF_RADIO->INTENSET = RADIO_INTENSET_READY_Msk;
+	// Stop Timer
+	_stopTimer();
+	// Mark TX as end
+	events_end_tx = true;
+	// Debug output
+#ifdef NRF5_ESB_DEBUG_INT_TX_END
+	NRF5_RADIO_DEBUG(PSTR("NRF5:INT:ENDTX\n"));
+#endif
+}
+
 static bool NRF5_ESB_sendMessage(uint8_t recipient, const void *buf, uint8_t len, const bool noACK)
 {
 	// Increment TX PID
@@ -333,7 +445,6 @@ static bool NRF5_ESB_sendMessage(uint8_t recipient, const void *buf, uint8_t len
 	if (NRF_RADIO->POWER == 0) {
 		NRF5_ESB_initialize();
 	}
-
 	// check length and truncate data
 	if (len > MAX_MESSAGE_SIZE) {
 		len = MAX_MESSAGE_SIZE;
@@ -615,11 +726,24 @@ extern "C" {
 #ifdef MY_DEBUG_VERBOSE_NRF5_ESB
 			intcntr_end++;
 #endif
-			// Check CRC
-			if (NRF_RADIO->CRCSTATUS == 0) {
-				// discard RX data
-				_stopACK();
-			} else 	{
+
+			// Enable ACK bitcounter for next packet
+			NRF_RADIO->BCC = NRF5_ESB_BITCOUNTER;
+
+			// End of RX packet
+			if ((NRF_RADIO->STATE == RADIO_STATE_STATE_Rx) ||
+			        (NRF_RADIO->STATE == RADIO_STATE_STATE_RxIdle) ||
+			        (NRF_RADIO->STATE == RADIO_STATE_STATE_RxDisable) ||
+			        (NRF_RADIO->STATE == RADIO_STATE_STATE_TxRu)) {
+				if (NRF_RADIO->CRCSTATUS) {
+					// Ensure no ACK package is received
+					if (NRF_RADIO->RXMATCH != NRF5_ESB_TX_ADDR) {
+						// calculate a package id
+						uint32_t pkgid = rx_buffer.pid << 16 | NRF_RADIO->RXCRC;
+						if (pkgid != package_ids[NRF_RADIO->RXMATCH]) {
+							// correct package -> store id to dedect duplicates
+							package_ids[NRF_RADIO->RXMATCH] = pkgid;
+							rx_buffer.rssi = NRF_RADIO->RSSISAMPLE;
 #ifdef MY_DEBUG_VERBOSE_NRF5_ESB
 				// Store debug data
 				rx_tx_buffer.rxmatch = NRF_RADIO->RXMATCH;

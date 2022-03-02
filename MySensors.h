@@ -291,9 +291,18 @@ MY_DEFAULT_RX_LED_PIN in your sketch instead to enable LEDs
 #define _PJONCNT 0	//!< _PJONCNT
 #endif
 
-#if (__RF24CNT + __NRF5ESBCNT + __RFM69CNT + __RFM95CNT + __RS485CNT + _PJONCNT > 1)
-#error Only one forward link driver can be activated
+#define MY_TRANSPORT_COUNT (__RF24CNT + __NRF5ESBCNT + __RFM69CNT + __RFM95CNT + __RS485CNT + _PJONCNT)
+
+#if (MY_TRANSPORT_COUNT > 1)
+// more than 1 transport requires RX queue
+#define MY_TRANSPORT_RX_QUEUE
+#else
+// RF24 + IRQ requires RX queue
+#if defined(MY_RADIO_RF24) && defined(MY_RF24_USE_INTERRUPTS)
+#define MY_TRANSPORT_RX_QUEUE
 #endif
+#endif
+
 #endif //DOXYGEN
 
 // SANITY CHECK
@@ -302,7 +311,7 @@ MY_DEFAULT_RX_LED_PIN in your sketch instead to enable LEDs
 #endif
 
 // TRANSPORT INCLUDES
-#if defined(MY_RADIO_RF24) || defined(MY_RADIO_NRF5_ESB) || defined(MY_RADIO_RFM69) || defined(MY_RADIO_RFM95) || defined(MY_RS485) || defined (MY_PJON)
+#if (MY_TRANSPORT_COUNT > 0)
 #include "hal/transport/MyTransportHAL.h"
 #include "core/MyTransport.h"
 
@@ -357,18 +366,25 @@ MY_DEFAULT_RX_LED_PIN in your sketch instead to enable LEDs
 #endif
 #endif
 
+#if (defined(MY_RF24_ENABLE_ENCRYPTION) && defined(MY_RADIO_RF24)) || (defined(MY_NRF5_ESB_ENABLE_ENCRYPTION) && defined(MY_RADIO_NRF5_ESB)) || (defined(MY_RFM69_ENABLE_ENCRYPTION) && defined(MY_RADIO_RFM69)) || (defined(MY_RFM95_ENABLE_ENCRYPTION) && defined(MY_RADIO_RFM95))
+#define MY_TRANSPORT_ENCRYPTION //!< internal flag
+#include "hal/transport/MyTransportEncryption.cpp"
+#endif
+
 // Transport drivers
 #if defined(MY_RADIO_RF24)
 #include "hal/transport/RF24/driver/RF24.cpp"
 #include "hal/transport/RF24/MyTransportRF24.cpp"
-#elif defined(MY_RADIO_NRF5_ESB)
+#endif
+#if defined(MY_RADIO_NRF5_ESB)
 #if !defined(ARDUINO_ARCH_NRF5)
 #error No support for nRF5 radio on this platform
 #endif
 #include "hal/transport/NRF5_ESB/driver/Radio.cpp"
 #include "hal/transport/NRF5_ESB/driver/Radio_ESB.cpp"
 #include "hal/transport/NRF5_ESB/MyTransportNRF5_ESB.cpp"
-#elif defined(MY_RS485)
+#endif
+#if defined(MY_RS485)
 #if !defined(MY_RS485_HWSERIAL)
 #if defined(__linux__)
 #error You must specify MY_RS485_HWSERIAL for RS485 transport
@@ -376,27 +392,31 @@ MY_DEFAULT_RX_LED_PIN in your sketch instead to enable LEDs
 #include "drivers/AltSoftSerial/AltSoftSerial.cpp"
 #endif
 #include "hal/transport/RS485/MyTransportRS485.cpp"
-#elif defined(MY_RADIO_RFM69)
+#endif
+#if defined(MY_RADIO_RFM69)
 #if defined(MY_RFM69_NEW_DRIVER)
 #include "hal/transport/RFM69/driver/new/RFM69_new.cpp"
 #else
 #include "hal/transport/RFM69/driver/old/RFM69_old.cpp"
 #endif
 #include "hal/transport/RFM69/MyTransportRFM69.cpp"
-#elif defined(MY_RADIO_RFM95)
+#endif
+#if defined(MY_RADIO_RFM95)
+#if defined(MY_RFM95_RFM69_COMPATIBILITY)
+#include "hal/transport/RFM95/driver/RFM95_RFM69.cpp"
+#include "hal/transport/RFM95/MyTransportRFM95_RFM69.cpp"
+#else
 #include "hal/transport/RFM95/driver/RFM95.cpp"
 #include "hal/transport/RFM95/MyTransportRFM95.cpp"
-#elif defined(MY_PJON)
+#endif
+#endif
+#if defined(MY_PJON)
 #include "hal/transport/PJON/driver/PJON.h"
 #include "hal/transport/PJON/driver/PJONSoftwareBitBang.h"
 #if (PJON_BROADCAST == 0)
 #error "You must change PJON_BROADCAST to BROADCAST_ADDRESS (255u) and PJON_NOT_ASSIGNED to other one."
 #endif
 #include "hal/transport/PJON/MyTransportPJON.cpp"
-#endif
-
-#if (defined(MY_RF24_ENABLE_ENCRYPTION) && defined(MY_RADIO_RF24)) || (defined(MY_NRF5_ESB_ENABLE_ENCRYPTION) && defined(MY_RADIO_NRF5_ESB)) || (defined(MY_RFM69_ENABLE_ENCRYPTION) && defined(MY_RADIO_RFM69)) || (defined(MY_RFM95_ENABLE_ENCRYPTION) && defined(MY_RADIO_RFM95))
-#define MY_TRANSPORT_ENCRYPTION //!< ïnternal flag
 #endif
 
 #include "hal/transport/MyTransportHAL.cpp"
