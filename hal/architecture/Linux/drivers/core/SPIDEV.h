@@ -24,6 +24,7 @@
 
 #include <stdint.h>
 #include <string>
+#include <pthread.h>
 #include <linux/spi/spidev.h>
 
 #define SPI_HAS_TRANSACTION
@@ -117,46 +118,50 @@ public:
 	/**
 	 * @brief SPIDEVClass constructor.
 	 */
-	SPIDEVClass();
+	SPIDEVClass(const std::string& device=SPI_SPIDEV_DEVICE);
 	/**
 	 * @brief Start SPI operations.
 	 */
-	static void begin(int busNo=0);
+	void begin();
+	/**
+	 * @brief Start SPI operations.
+	 */
+	void begin(int busNo);
 	/**
 	 * @brief End SPI operations.
 	 */
-	static void end();
+	void end();
 	/**
 	 * @brief Sets the SPI bit order.
 	 *
 	 * @param bit_order The desired bit order.
 	 */
-	static void setBitOrder(uint8_t bit_order);
+	void setBitOrder(uint8_t bit_order);
 	/**
 	 * @brief Sets the SPI data mode.
 	 *
 	 * @param data_mode The desired data mode.
 	 */
-	static void setDataMode(uint8_t data_mode);
+	void setDataMode(uint8_t data_mode);
 	/**
 	 * @brief Sets the SPI clock divider and therefore the SPI clock speed.
 	 *
 	 * @param divider The desired SPI clock divider.
 	 */
-	static void setClockDivider(uint16_t divider);
+	void setClockDivider(uint16_t divider);
 	/**
 	 * @brief Sets the chip select pin.
 	 *
 	 * @param csn_chip Specifies the CS chip.
 	 */
-	static void chipSelect(int csn_chip);
+	void chipSelect(int csn_chip);
 	/**
 	* @brief Transfer a single byte
 	*
 	* @param data Byte to send
 	* @return Data returned via spi
 	*/
-	static uint8_t transfer(uint8_t data);
+	uint8_t transfer(uint8_t data);
 	/**
 	* @brief Transfer a buffer of data
 	*
@@ -164,49 +169,49 @@ public:
 	* @param rbuf Receive buffer
 	* @param len Length of the data
 	*/
-	static void transfernb(char* tbuf, char* rbuf, uint32_t len);
+	void transfernb(char* tbuf, char* rbuf, uint32_t len);
 	/**
 	* @brief Transfer a buffer of data without an rx buffer
 	*
 	* @param buf Pointer to a buffer of data
 	* @param len Length of the data
 	*/
-	static void transfern(char* buf, uint32_t len);
+	void transfern(char* buf, uint32_t len);
 	/**
 	 * @brief Start SPI transaction.
 	 *
 	 * @param settings for SPI.
 	 */
-	static void beginTransaction(SPISettings settings);
+	void beginTransaction(SPISettings settings);
 	/**
 	 * @brief End SPI transaction.
 	 */
-	static void endTransaction();
+	void endTransaction();
 	/**
 	 * @brief Not implemented.
 	 *
 	 * @param interruptNumber ignored parameter.
 	 */
-	static void usingInterrupt(uint8_t interruptNumber);
+	void usingInterrupt(uint8_t interruptNumber);
 	/**
 	 * @brief Not implemented.
 	 *
 	 * @param interruptNumber ignored parameter.
 	 */
-	static void notUsingInterrupt(uint8_t interruptNumber);
+	void notUsingInterrupt(uint8_t interruptNumber);
 
 private:
-	static uint8_t initialized; //!< @brief SPI initialized flag.
-	static int fd; //!< @brief SPI device file descriptor.
-	static std::string device; //!< @brief Default SPI device.
-	static uint8_t mode; //!< @brief SPI mode.
-	static uint32_t speed; //!< @brief SPI speed.
-	static uint8_t bit_order; //!< @brief SPI bit order.
-	static struct spi_ioc_transfer tr; //!< @brief Auxiliar struct for data transfer.
+	pthread_mutex_t spiMutex = PTHREAD_MUTEX_INITIALIZER;
+	pthread_mutexattr_t attr;
+	uint8_t initialized = 0; //!< @brief SPI initialized flag.
+	int fd; //!< @brief SPI device file descriptor.
+	std::string device; //!< @brief Default SPI device.
+	uint8_t mode; //!< @brief SPI mode.
+	uint32_t speed; //!< @brief SPI speed.
+	uint8_t bit_order; //!< @brief SPI bit order.
+	struct spi_ioc_transfer tr; //!< @brief Auxiliar struct for data transfer.
 
-	static void init();
+	void init();
 };
-
-extern SPIDEVClass SPIDEV;
 
 #endif

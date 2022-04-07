@@ -159,6 +159,10 @@
 #define MCP_TX01_MASK       0x14
 #define MCP_TX_MASK        0x54
 
+#if !defined(MCP2515_SPI)
+#define MCP2515_SPI hwSPI //!< default SPI
+#endif
+
 /*
  *   Define SPI Instruction Set
  */
@@ -407,8 +411,10 @@
 #define MCP_RXBUF_0 (MCP_RXB0SIDH)
 #define MCP_RXBUF_1 (MCP_RXB1SIDH)
 
+#ifndef LINUX_SPI_SPIDEV
 #define MCP2515_SELECT()   digitalWrite(MCPCS, LOW)
 #define MCP2515_UNSELECT() digitalWrite(MCPCS, HIGH)
+#endif
 
 #define MCP2515_OK         (0)
 #define MCP2515_FAIL       (1)
