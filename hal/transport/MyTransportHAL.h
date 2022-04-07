@@ -57,6 +57,26 @@
 #define INVALID_PERCENT     ((int16_t)-100)	//!< INVALID_PERCENT
 #define INVALID_LEVEL       ((int16_t)-256)	//!< INVALID_LEVEL
 
+#if defined(MY_RX_MESSAGE_BUFFER_FEATURE)
+#if defined(MY_RADIO_NRF5_ESB)
+#error Receive message buffering not supported for NRF5 radio! Please define MY_NRF5_RX_BUFFER_SIZE
+#endif
+#if defined(MY_RADIO_RFM69)
+#error Receive message buffering not supported for RFM69!
+#endif
+#if defined(MY_RADIO_RFM95)
+#error Receive message buffering not supported for RFM95!
+#endif
+#if defined(MY_RS485)
+#error Receive message buffering not supported for RS485!
+#endif
+#if defined(MY_CAN)
+#error Receive message buffering not supported for CAN!
+#endif
+#elif defined(MY_RX_MESSAGE_BUFFER_SIZE)
+#error Receive message buffering requires message buffering feature enabled!
+#endif
+
 /**
 * @brief Signal report selector
 */
