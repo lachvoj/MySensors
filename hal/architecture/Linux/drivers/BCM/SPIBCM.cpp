@@ -20,16 +20,9 @@
  */
 
 #include "SPIBCM.h"
-#include <pthread.h>
 #include <stdlib.h>
 #include "log.h"
 
-static pthread_mutex_t spiMutex = PTHREAD_MUTEX_INITIALIZER;
-
-// Declare a single default instance
-SPIBCMClass SPIBCM = SPIBCMClass();
-
-uint8_t SPIBCMClass::initialized = 0;
 
 void SPIBCMClass::begin()
 {

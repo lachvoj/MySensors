@@ -21,31 +21,24 @@
 
 #include "SPIDEV.h"
 #include <fcntl.h>
-#include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
 #include <unistd.h>
 #include "log.h"
 
-static pthread_mutex_t spiMutex = PTHREAD_MUTEX_INITIALIZER;
-static pthread_mutexattr_t attr;
-
-// Declare a single default instance
-SPIDEVClass SPIDEV = SPIDEVClass();
-
-uint8_t SPIDEVClass::initialized = 0;
-int SPIDEVClass::fd = -1;
-std::string SPIDEVClass::device = SPI_SPIDEV_DEVICE;
-uint8_t SPIDEVClass::mode = SPI_MODE0;
-uint32_t SPIDEVClass::speed = SPI_CLOCK_BASE;
-uint8_t SPIDEVClass::bit_order = MSBFIRST;
-struct spi_ioc_transfer SPIDEVClass::tr = {0,0,0,0,0,8,0,0,0,0};	// 8 bits_per_word, 0 cs_change
-
-SPIDEVClass::SPIDEVClass()
+SPIDEVClass::SPIDEVClass(const std::string& device):device(device)
 {
 	pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
 	pthread_mutex_init(&spiMutex, &attr);
+}
+
+void SPIDEVClass::begin()
+{
+	if (!initialized)
+		init();
+
+	initialized++; // reference count
 }
 
 void SPIDEVClass::begin(int busNo)
@@ -62,7 +55,7 @@ void SPIDEVClass::begin(int busNo)
 		init();
 	}
 
-	initialized++; // reference count
+	begin();
 }
 
 void SPIDEVClass::end()

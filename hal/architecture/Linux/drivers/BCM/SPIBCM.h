@@ -23,6 +23,7 @@
 #define SPIBCM_h
 
 #include <stdio.h>
+#include <pthread.h>
 #include "bcm2835.h"
 #include "BCM.h"
 
@@ -167,7 +168,7 @@ public:
 	 * @param data to send.
 	 * @return byte received.
 	 */
-	inline static uint8_t transfer(uint8_t data);
+	inline uint8_t transfer(uint8_t data);
 	/**
 	 * @brief Send and receive a number of bytes.
 	 *
@@ -175,71 +176,72 @@ public:
 	 * @param rbuf Receive buffer.
 	 * @param len Buffer length.
 	 */
-	inline static void transfernb(char* tbuf, char* rbuf, uint32_t len);
+	inline void transfernb(char* tbuf, char* rbuf, uint32_t len);
 	/**
 	 * @brief Send and receive a number of bytes.
 	 *
 	 * @param buf Buffer to read from and write to.
 	 * @param len Buffer length.
 	 */
-	inline static void transfern(char* buf, uint32_t len);
+	inline void transfern(char* buf, uint32_t len);
 	/**
 	 * @brief Start SPI operations.
 	 */
-	static void begin();
+	void begin();
 	/**
 	 * @brief End SPI operations.
 	 */
-	static void end();
+	void end();
 	/**
 	 * @brief Sets the SPI bit order.
 	 *
 	 * @param bit_order The desired bit order.
 	 */
-	static void setBitOrder(uint8_t bit_order);
+	void setBitOrder(uint8_t bit_order);
 	/**
 	 * @brief Sets the SPI data mode.
 	 *
 	 * @param data_mode The desired data mode.
 	 */
-	static void setDataMode(uint8_t data_mode);
+	void setDataMode(uint8_t data_mode);
 	/**
 	 * @brief Sets the SPI clock divider and therefore the SPI clock speed.
 	 *
 	 * @param divider The desired SPI clock divider.
 	 */
-	static void setClockDivider(uint16_t divider);
+	void setClockDivider(uint16_t divider);
 	/**
 	 * @brief Sets the chip select pin.
 	 *
 	 * @param csn_pin Specifies the CS pin.
 	 */
-	static void chipSelect(int csn_pin);
+	void chipSelect(int csn_pin);
 	/**
 	 * @brief Start SPI transaction.
 	 *
 	 * @param settings for SPI.
 	 */
-	static void beginTransaction(SPISettings settings);
+	void beginTransaction(SPISettings settings);
 	/**
 	 * @brief End SPI transaction.
 	 */
-	static void endTransaction();
+	void endTransaction();
 	/**
 	 * @brief Not implemented.
 	 *
 	 * @param interruptNumber ignored parameter.
 	 */
-	static void usingInterrupt(uint8_t interruptNumber);
+	void usingInterrupt(uint8_t interruptNumber);
 	/**
 	 * @brief Not implemented.
 	 *
 	 * @param interruptNumber ignored parameter.
 	 */
-	static void notUsingInterrupt(uint8_t interruptNumber);
+	void notUsingInterrupt(uint8_t interruptNumber);
 
 private:
-	static uint8_t initialized; //!< @brief SPI initialized flag.
+	uint8_t initialized = 0; //!< @brief SPI initialized flag.
+	pthread_mutex_t spiMutex = PTHREAD_MUTEX_INITIALIZER;
 };
 
 uint8_t SPIBCMClass::transfer(uint8_t data)
@@ -256,7 +258,5 @@ void SPIBCMClass::transfern(char* buf, uint32_t len)
 {
 	transfernb(buf, buf, len);
 }
-
-extern SPIBCMClass SPIBCM;
 
 #endif
