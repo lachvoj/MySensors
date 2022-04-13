@@ -99,8 +99,7 @@ void transportDebugChannels(void)
 
 #if defined(MY_TRANSPORT_RX_QUEUE)
 static RXQueuedMessage_t transportRxQueueStorage[RX_QUEUE_BUFFER_SIZE];
-static CircularBuffer<RXQueuedMessage_t> transportRxQueue(transportRxQueueStorage,
-        RX_QUEUE_BUFFER_SIZE);
+static CircularBuffer<RXQueuedMessage_t> transportRxQueue(transportRxQueueStorage, RX_QUEUE_BUFFER_SIZE);
 
 
 RXQueuedMessage_t *transportHALGetQueueBuffer(void)
@@ -152,6 +151,12 @@ bool transportHALInit(void)
 #if defined(MY_RS485)
 	result &= RS485_transportInit();
 #endif
+#if defined(MY_PJON)
+	result &= PJON_transportInit();
+#endif
+#if defined(MY_CAN)
+	result &= CAN_transportInit();
+#endif
 
 #if defined(MY_TRANSPORT_ENCRYPTION)
 	// Make sure it is purged from memory when set
@@ -178,6 +183,12 @@ void transportHALHandler(void)
 #if defined(MY_RS485)
 	RS485_transportTask();
 #endif
+#if defined(MY_PJON)
+	PJON_transportTask();
+#endif
+#if defined(MY_CAN)
+	CAN_transportTask();
+#endif
 }
 
 void transportHALSetAddress(const uint8_t address)
@@ -198,6 +209,12 @@ void transportHALSetAddress(const uint8_t address)
 #if defined(MY_RS485)
 	RS485_transportSetAddress(address);
 #endif
+#if defined(MY_PJON)
+	PJON_transportSetAddress(address);
+#endif
+#if defined(MY_CAN)
+	CAN_transportSetAddress(address);
+#endif
 	// cppcheck
 	(void)address;
 }
@@ -216,6 +233,10 @@ uint8_t transportHALGetAddress(void)
 	result = NRF5_ESB_transportGetAddress();
 #elif defined(MY_RS485)
 	result = RS485_transportGetAddress();
+#elif defined(MY_PJON)
+	result = PJON_transportGetAddress();
+#elif defined(MY_CAN)
+	result = CAN_transportGetAddress();
 #endif
 
 	TRANSPORT_HAL_DEBUG(PSTR("THA:GAD:ADDR=%" PRIu8 "\n"), result);
@@ -238,6 +259,10 @@ bool transportHALDataAvailable(void)
 	result = NRF5_ESB_transportDataAvailable();
 #elif  defined(MY_RS485)
 	result = RS485_transportDataAvailable();
+#elif defined(MY_PJON)
+	result = PJON_transportDataAvailable();
+#elif defined(MY_CAN)
+	result = CAN_transportDataAvailable();
 #endif
 #endif
 
@@ -268,6 +293,12 @@ bool transportHALSanityCheck(void)
 #if defined(MY_RS485)
 	result &= RS485_transportSanityCheck();
 #endif
+#if defined(MY_PJON)
+	result &= PJON_transportSanityCheck();
+#endif
+#if defined(MY_CAN)
+	result &= CAN_transportSanityCheck();
+#endif
 	TRANSPORT_HAL_DEBUG(PSTR("THA:SAN:RES=%" PRIu8 "\n"), result);
 	return result;
 }
@@ -294,6 +325,10 @@ bool transportHALReceive(MyMessage *inMsg, uint8_t *msgLength)
 	payloadLength = NRF5_ESB_transportReceive((void *)&inMsg->last, MAX_MESSAGE_SIZE);
 #elif defined(MY_RS485)
 	payloadLength = RS485_transportReceive((void *)&inMsg->last, MAX_MESSAGE_SIZE);
+#elif defined(MY_PJON)
+	payloadLength = PJON_transportReceive((void *)&inMsg->last, MAX_MESSAGE_SIZE);
+#elif defined(MY_CAN)
+	payloadLength = CAN_transportReceive((void *)&inMsg->last, MAX_MESSAGE_SIZE);
 #endif
 #endif
 
@@ -392,6 +427,20 @@ bool transportHALSend(const uint8_t nextRecipient, const MyMessage *outMsg, uint
 		                              noACK);
 	}
 #endif
+#if defined(MY_PJON)
+	// cppcheck-suppress knownConditionTrueFalse
+	if (channel == TRANSPORT_PJON_CHANNEL_ID || channel == TRANSPORT_ALL_CHANNEL_ID) {
+		result &= PJON_transportSend(nextRecipient, (void *)&outMsg->last, len,
+		                              noACK);
+	}
+#endif
+#if defined(MY_CAN)
+	// cppcheck-suppress knownConditionTrueFalse
+	if (channel == TRANSPORT_CAN_CHANNEL_ID || channel == TRANSPORT_ALL_CHANNEL_ID) {
+		result &= CAN_transportSend(nextRecipient, (void *)&outMsg->last, len,
+		                              noACK);
+	}
+#endif
 #if (MY_TRANSPORT_COUNT > 1)
 	// if we receive a hwACK (result==true && !noACK) and message is not BC (checked in transportUpdateChannel() ), update channel table accordingly
 	if (result && !noACK) {
@@ -421,6 +470,12 @@ int16_t transportHALGetSendingRSSI(void)
 #if defined(MY_RS485)
 	return RS485_transportGetSendingRSSI();
 #endif
+#if defined(MY_PJON)
+	return PJON_transportGetSendingRSSI();
+#endif
+#if defined(MY_CAN)
+	return CAN_transportGetSendingRSSI();
+#endif
 #endif
 	return FUNCTION_NOT_SUPPORTED;
 }
@@ -442,6 +497,12 @@ int16_t transportHALGetReceivingRSSI(void)
 #endif
 #if defined(MY_RS485)
 	return RS485_transportGetReceivingRSSI();
+#endif
+#if defined(MY_PJON)
+	return PJON_transportGetReceivingRSSI();
+#endif
+#if defined(MY_CAN)
+	return CAN_transportGetReceivingRSSI();
 #endif
 #endif
 	return FUNCTION_NOT_SUPPORTED;
@@ -465,6 +526,12 @@ int16_t transportHALGetSendingSNR(void)
 #if defined(MY_RS485)
 	return RS485_transportGetSendingSNR();
 #endif
+#if defined(MY_PJON)
+	return PJON_transportGetSendingSNR();
+#endif
+#if defined(MY_CAN)
+	return CAN_transportGetSendingSNR();
+#endif
 #endif
 	return FUNCTION_NOT_SUPPORTED;
 }
@@ -486,6 +553,12 @@ int16_t transportHALGetReceivingSNR(void)
 #endif
 #if defined(MY_RS485)
 	return RS485_transportGetReceivingSNR();
+#endif
+#if defined(MY_PJON)
+	return PJON_transportGetReceivingSNR();
+#endif
+#if defined(MY_CAN)
+	return CAN_transportGetReceivingSNR();
 #endif
 #endif
 	return FUNCTION_NOT_SUPPORTED;
@@ -509,6 +582,12 @@ int16_t transportHALGetTxPowerPercent(void)
 #if defined(MY_RS485)
 	return RS485_transportGetTxPowerPercent();
 #endif
+#if defined(MY_PJON)
+	return PJON_transportGetTxPowerPercent();
+#endif
+#if defined(MY_CAN)
+	return CAN_transportGetTxPowerPercent();
+#endif
 #endif
 	return FUNCTION_NOT_SUPPORTED;
 }
@@ -530,6 +609,12 @@ bool transportHALSetTxPowerPercent(const uint8_t powerPercent)
 #endif
 #if defined(MY_RS485)
 	return RS485_transportSetTxPowerPercent(powerPercent);
+#endif
+#if defined(MY_PJON)
+	return PJON_transportSetTxPowerPercent(powerPercent);
+#endif
+#if defined(MY_CAN)
+	return CAN_transportSetTxPowerPercent(powerPercent);
 #endif
 #endif
 	(void)powerPercent;
@@ -554,6 +639,12 @@ int16_t transportHALGetTxPowerLevel(void)
 #if defined(MY_RS485)
 	return RS485_transportGetTxPowerLevel();
 #endif
+#if defined(MY_PJON)
+	return PJON_transportGetTxPowerLevel();
+#endif
+#if defined(MY_CAN)
+	return CAN_transportGetTxPowerLevel();
+#endif
 #endif
 	return FUNCTION_NOT_SUPPORTED;
 }
@@ -575,6 +666,12 @@ void transportHALPowerDown(void)
 #if defined(MY_RS485)
 	RS485_transportPowerDown();
 #endif
+#if defined(MY_PJON)
+	return PJON_transportPowerDown();
+#endif
+#if defined(MY_CAN)
+	return CAN_transportPowerDown();
+#endif
 }
 
 
@@ -595,6 +692,12 @@ void transportHALPowerUp(void)
 #if defined(MY_RS485)
 	RS485_transportPowerUp();
 #endif
+#if defined(MY_PJON)
+	return PJON_transportPowerUp();
+#endif
+#if defined(MY_CAN)
+	return CAN_transportPowerUp();
+#endif
 }
 
 void transportHALSleep(void)
@@ -614,6 +717,12 @@ void transportHALSleep(void)
 #if defined(MY_RS485)
 	RS485_transportSleep();
 #endif
+#if defined(MY_PJON)
+	return PJON_transportSleep();
+#endif
+#if defined(MY_CAN)
+	return CAN_transportSleep();
+#endif
 }
 
 void transportHALStandBy(void)
@@ -632,5 +741,11 @@ void transportHALStandBy(void)
 #endif
 #if defined(MY_RS485)
 	RS485_transportStandBy();
+#endif
+#if defined(MY_PJON)
+	return PJON_transportStandBy();
+#endif
+#if defined(MY_CAN)
+	return CAN_transportStandBy();
 #endif
 }

@@ -38,7 +38,7 @@ uint8_t _packet_len;
 unsigned char _packet_from;
 bool _packet_received;
 
-bool transportSend(const uint8_t to, const void *data, const uint8_t length, const bool noACK)
+bool PJON_transportSend(const uint8_t to, const void *data, const uint8_t length, const bool noACK)
 {
 	const char *datap = static_cast<const char *>(data);
 	char *dataToSend = const_cast<char *>(datap);
@@ -63,7 +63,7 @@ void _receiver_function(uint8_t *payload, uint16_t length, const PJON_Packet_Inf
 	}
 }
 
-bool transportInit(void)
+bool PJON_transportInit(void)
 {
 	PJON_DEBUG(PSTR("PJON:INIT:PIN=%" PRIu8 "\n"), MY_PJON_PIN);
 	bus.begin();
@@ -72,31 +72,36 @@ bool transportInit(void)
 	return true;
 }
 
-void transportSetAddress(const uint8_t address)
+void PJON_transportSetAddress(const uint8_t address)
 {
 	bus.set_id(address);
 }
 
-uint8_t transportGetAddress(void)
+uint8_t PJON_transportGetAddress(void)
 {
 	return bus.device_id();
 }
 
 
-bool transportDataAvailable(void)
+bool PJON_transportDataAvailable(void)
 {
 	bus.receive(PJON_POLLING_DURATION);
 	bus.update();
 	return _packet_received;
 }
 
-bool transportSanityCheck(void)
+bool PJON_transportSanityCheck(void)
 {
 	// not implemented on PHY layer
 	return true;
 }
 
-uint8_t transportReceive(void *data)
+void PJON_transportTask(void)
+{
+	// not implemented
+}
+
+uint8_t PJON_transportReceive(void *data)
 {
 	if (_packet_received) {
 		(void)memcpy(data, (const void *)_data, _packet_len);
@@ -108,63 +113,63 @@ uint8_t transportReceive(void *data)
 
 }
 
-void transportPowerDown(void)
+void PJON_transportPowerDown(void)
 {
 	// Nothing to shut down here
 }
 
-void transportPowerUp(void)
+void PJON_transportPowerUp(void)
 {
 	// not implemented
 }
 
-void transportSleep(void)
+void PJON_transportSleep(void)
 {
 	// not implemented
 }
 
-void transportStandBy(void)
+void PJON_transportStandBy(void)
 {
 	// not implemented
 }
 
-int16_t transportGetSendingRSSI(void)
-{
-	// not implemented
-	return INVALID_RSSI;
-}
-
-int16_t transportGetReceivingRSSI(void)
+int16_t PJON_transportGetSendingRSSI(void)
 {
 	// not implemented
 	return INVALID_RSSI;
 }
 
-int16_t transportGetSendingSNR(void)
+int16_t PJON_transportGetReceivingRSSI(void)
+{
+	// not implemented
+	return INVALID_RSSI;
+}
+
+int16_t PJON_transportGetSendingSNR(void)
 {
 	// not implemented
 	return INVALID_SNR;
 }
 
-int16_t transportGetReceivingSNR(void)
+int16_t PJON_transportGetReceivingSNR(void)
 {
 	// not implemented
 	return INVALID_SNR;
 }
 
-int16_t transportGetTxPowerPercent(void)
+int16_t PJON_transportGetTxPowerPercent(void)
 {
 	// not implemented
 	return static_cast<int16_t>(100);
 }
 
-int16_t transportGetTxPowerLevel(void)
+int16_t PJON_transportGetTxPowerLevel(void)
 {
 	// not implemented
 	return static_cast<int16_t>(100);
 }
 
-bool transportSetTxPowerPercent(const uint8_t powerPercent)
+bool PJON_transportSetTxPowerPercent(const uint8_t powerPercent)
 {
 	// not possible
 	(void)powerPercent;

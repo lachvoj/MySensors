@@ -108,6 +108,12 @@ typedef enum {
 #if defined(MY_RS485)
 	TRANSPORT_RS485_CHANNEL_ID,     //!< TRANSPORT_RS485_CHANNEL_ID
 #endif
+#if defined(MY_PJON)
+	TRANSPORT_PJON_CHANNEL_ID,     //!< TRANSPORT_PJON_CHANNEL_ID
+#endif
+#if defined(MY_CAN)
+	TRANSPORT_CAN_CHANNEL_ID,     //!< TRANSPORT_CAN_CHANNEL_ID
+#endif
 } transportChannelID_t;
 
 /**

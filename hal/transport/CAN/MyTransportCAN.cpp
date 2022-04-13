@@ -1,11 +1,13 @@
 #include "hal/transport/CAN/driver/mcp_can.h"
 #include "hal/transport/CAN/driver/mcp_can.cpp"
 #include "MyTransportCAN.h"
+
 #if defined(MY_DEBUG_VERBOSE_CAN)
 #define CAN_DEBUG(x,...)	DEBUG_OUTPUT(x, ##__VA_ARGS__)	//!< Debug print
 #else
 #define CAN_DEBUG(x,...)	//!< DEBUG null
 #endif
+
 MCP_CAN CAN0(CAN_CS);
 bool canInitialized=false;
 
@@ -59,7 +61,7 @@ bool _initFilters()
 	return err == 0;
 }
 
-bool transportInit(void)
+bool CAN_transportInit(void)
 {
 	CAN_DEBUG(PSTR("CAN:INIT:CS=%" PRIu8 ",INT=%" PRIu8 ",SPE=%" PRIu8 ",CLO=%" PRIu8 "\n"), CAN_CS,
 	          CAN_INT, CAN_SPEED, CAN_CLOCK);
@@ -165,7 +167,7 @@ long unsigned int _buildHeader(uint8_t messageId, uint8_t totalPartCount, uint8_
 	return header;
 }
 
-bool transportSend(const uint8_t to, const void *data, const uint8_t len, const bool noACK)
+bool CAN_transportSend(const uint8_t to, const void *data, const uint8_t len, const bool noACK)
 {
 	(void) noACK;    // some ack is provided by CAN itself. TODO implement application layer ack.
 	const char *datap = static_cast<char const *>(data);
@@ -214,7 +216,7 @@ bool transportSend(const uint8_t to, const void *data, const uint8_t len, const 
 	}
 }
 
-bool transportDataAvailable(void)
+bool CAN_transportDataAvailable(void)
 {
 	if (!hwDigitalRead(CAN_INT)) {                       // If CAN_INT pin is low, read receive buffer
 		CAN0.readMsgBuf(&rxId, &len, rxBuf);      // Read data: len = data length, buf = data byte(s)
@@ -251,16 +253,30 @@ bool transportDataAvailable(void)
 	return false;
 }
 
-uint8_t transportReceive(void *data)
+void CAN_transportTask(void)
 {
-	uint8_t slot = CAN_BUF_SIZE;
+#if defined(MY_TRANSPORT_RX_QUEUE)
+	while (CAN_transportDataAvailable()) {
+		RXQueuedMessage_t *msgIn = transportHALGetQueueBuffer();
+		if (msgIn != NULL) {
+			msgIn->channel = TRANSPORT_CAN_CHANNEL_ID;
+			msgIn->length = CAN_transportReceive((void *)&msgIn->data, sizeof(msgIn->data));
+			(void)transportHALPushQueueBuffer(msgIn);
+		}
+	}
+#endif
+}
+
+uint8_t CAN_transportReceive(void *data, const uint8_t maxBufSize)
+{
+	uint8_t slot = maxBufSize;
 	uint8_t i;
-	for (i = 0; i < CAN_BUF_SIZE; i++) {
+	for (i = 0; i < maxBufSize; i++) {
 		if (packets[i].ready) {
 			slot = i;
 		}
 	}
-	if (slot < CAN_BUF_SIZE) {
+	if (slot < maxBufSize) {
 		memcpy(data, packets[slot].data, packets[slot].len);
 		i = packets[slot].len;
 		_cleanSlot(slot);
@@ -270,79 +286,79 @@ uint8_t transportReceive(void *data)
 	}
 }
 
-void transportSetAddress(const uint8_t address)
+void CAN_transportSetAddress(const uint8_t address)
 {
 	_nodeId = address;
 }
 
-uint8_t transportGetAddress(void)
+uint8_t CAN_transportGetAddress(void)
 {
 	return _nodeId;
 }
 
-bool transportSanityCheck(void)
+bool CAN_transportSanityCheck(void)
 {
 	// not implemented yet
 	return true;
 }
 
-void transportPowerDown(void)
+void CAN_transportPowerDown(void)
 {
 	// Nothing to shut down here
 }
 
-void transportPowerUp(void)
+void CAN_transportPowerUp(void)
 {
 	// not implemented
 }
 
-void transportSleep(void)
+void CAN_transportSleep(void)
 {
 	// not implemented
 }
 
-void transportStandBy(void)
+void CAN_transportStandBy(void)
 {
 	// not implemented
 }
 
-int16_t transportGetSendingRSSI(void)
-{
-	// not implemented
-	return INVALID_RSSI;
-}
-
-int16_t transportGetReceivingRSSI(void)
+int16_t CAN_transportGetSendingRSSI(void)
 {
 	// not implemented
 	return INVALID_RSSI;
 }
 
-int16_t transportGetSendingSNR(void)
+int16_t CAN_transportGetReceivingRSSI(void)
+{
+	// not implemented
+	return INVALID_RSSI;
+}
+
+int16_t CAN_transportGetSendingSNR(void)
 {
 	// not implemented
 	return INVALID_SNR;
 }
 
-int16_t transportGetReceivingSNR(void)
+int16_t CAN_transportGetReceivingSNR(void)
 {
 	// not implemented
 	return INVALID_SNR;
 }
 
-int16_t transportGetTxPowerPercent(void)
+int16_t CAN_transportGetTxPowerPercent(void)
 {
 	// not implemented
 	return static_cast<int16_t>(100);
 }
 
-int16_t transportGetTxPowerLevel(void)
+int16_t CAN_transportGetTxPowerLevel(void)
 {
 	// not implemented
 	return static_cast<int16_t>(100);
 }
 
-bool transportSetTxPowerPercent(const uint8_t powerPercent)
+bool CAN_transportSetTxPowerPercent(const uint8_t powerPercent)
 {
 	// not possible
 	(void) powerPercent;
