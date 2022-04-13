@@ -1,5 +1,5 @@
 bool _initFilters();
-bool transportInit(void);
+bool CAN_transportInit(void);
 
 void _cleanSlot(uint8_t slot);
 
@@ -8,37 +8,39 @@ uint8_t _findCanPacketSlot();
 uint8_t _findCanPacketSlot(long unsigned int from, long unsigned int currentPart,
                            long unsigned int messageId);
 
-bool transportSend(const uint8_t to, const void* data, const uint8_t len, const bool noACK);
+bool CAN_transportSend(const uint8_t to, const void* data, const uint8_t len, const bool noACK);
 
-bool transportDataAvailable(void);
+bool CAN_transportDataAvailable(void);
 
-uint8_t transportReceive(void* data);
+uint8_t CAN_transportReceive(void *data, const uint8_t maxBufSize);
 
-void transportSetAddress(const uint8_t address);
+void CAN_transportTask(void);
 
-uint8_t transportGetAddress(void);
+void CAN_transportSetAddress(const uint8_t address);
 
-bool transportSanityCheck(void);
+uint8_t CAN_transportGetAddress(void);
 
-void transportPowerDown(void);
+bool CAN_transportSanityCheck(void);
 
-void transportPowerUp(void);
+void CAN_transportPowerDown(void);
 
-void transportSleep(void);
+void CAN_transportPowerUp(void);
 
-void transportStandBy(void);
+void CAN_transportSleep(void);
 
-int16_t transportGetSendingRSSI(void);
+void CAN_transportStandBy(void);
 
-int16_t transportGetReceivingRSSI(void);
+int16_t CAN_transportGetSendingRSSI(void);
 
-int16_t transportGetSendingSNR(void);
+int16_t CAN_transportGetReceivingRSSI(void);
 
-int16_t transportGetReceivingSNR(void);
+int16_t CAN_transportGetSendingSNR(void);
 
-int16_t transportGetTxPowerPercent(void);
+int16_t CAN_transportGetReceivingSNR(void);
 
-int16_t transportGetTxPowerLevel(void);
+int16_t CAN_transportGetTxPowerPercent(void);
 
-bool transportSetTxPowerPercent(const uint8_t powerPercent);
+int16_t CAN_transportGetTxPowerLevel(void);
+
+bool CAN_transportSetTxPowerPercent(const uint8_t powerPercent);
 

@@ -49,7 +49,7 @@ INT8U MCP_CAN::mcp2515_readRegister(const INT8U address)
     MCP2515_SELECT();
     MCP2515_SPI.transfer(MCP_READ);
     MCP2515_SPI.transfer(address);
-    ret = spi_read();
+    ret = MCP2515_SPI.transfer(0x00);
     MCP2515_UNSELECT();
     MCP2515_SPI.endTransaction();
 
@@ -69,7 +69,7 @@ void MCP_CAN::mcp2515_readRegisterS(const INT8U address, INT8U values[], const I
     MCP2515_SPI.transfer(address);
     // mcp2515 has auto-increment of address-pointer
     for (i=0; i<n; i++) 
-        values[i] = spi_read();
+        values[i] = MCP2515_SPI.transfer(0x00);
 
     MCP2515_UNSELECT();
     MCP2515_SPI.endTransaction();
@@ -135,7 +135,7 @@ INT8U MCP_CAN::mcp2515_readStatus(void)
     MCP2515_SPI.beginTransaction(SPISettings());
     MCP2515_SELECT();
     MCP2515_SPI.transfer(MCP_READ_STATUS);
-    i = spi_read();
+    i = MCP2515_SPI.transfer(0x00);
     MCP2515_UNSELECT();
     MCP2515_SPI.endTransaction();
     return i;

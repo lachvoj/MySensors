@@ -411,7 +411,10 @@
 #define MCP_RXBUF_0 (MCP_RXB0SIDH)
 #define MCP_RXBUF_1 (MCP_RXB1SIDH)
 
-#ifndef LINUX_SPI_SPIDEV
+#ifdef LINUX_SPI_SPIDEV
+#define MCP2515_SELECT()
+#define MCP2515_UNSELECT()
+#else
 #define MCP2515_SELECT()   digitalWrite(MCPCS, LOW)
 #define MCP2515_UNSELECT() digitalWrite(MCPCS, HIGH)
 #endif

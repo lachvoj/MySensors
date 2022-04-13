@@ -28,6 +28,7 @@
 #define SPIClass SPIDEVClass
 #endif
 
+#ifdef SPIClass
 SPIClass spi0 = SPIClass();
 #define SPI spi0
 #if (SPI_COUNT > 1)
@@ -43,6 +44,7 @@ SPIClass spi1 = SPIClass(SPI1_SPIDEV_DEVICE);
 #endif
 SPIClass spi2 = SPIClass(SPI2_SPIDEV_DEVICE);
 #define SPI2 spi2
+#endif
 #endif
 
 #endif
