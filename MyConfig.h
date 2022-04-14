@@ -283,7 +283,7 @@
  * @brief Message arrived interrupt pin.
  */
 #ifndef CAN_INT
-#define CAN_INT (2u)
+#define CAN_INT (11u)
 #endif
 /**
  * @def CAN_CS
