@@ -162,8 +162,8 @@ uint8_t SPIDEVClass::transfer(uint8_t data)
 
 	pthread_mutex_lock(&spiMutex);
 
-	tr.tx_buf = (unsigned long)&tx[0];
-	tr.rx_buf = (unsigned long)&rx[0];
+	tr.tx_buf = (unsigned long)tx;
+	tr.rx_buf = (unsigned long)rx;
 	tr.len = 1;
 	tr.speed_hz = speed;
 

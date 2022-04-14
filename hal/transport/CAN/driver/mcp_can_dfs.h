@@ -37,7 +37,9 @@
 #endif
 
 // if print debug information
-#define DEBUG_MODE 0
+#ifndef DEBUG_MODE
+#define DEBUG_MODE 1
+#endif
 
 /*
  *   Begin mt
@@ -151,17 +153,13 @@
 #define MCP_RXB1SIDH    0x71
 
 
-#define MCP_TX_INT          0x1C                                    /* Enable all transmit interrup ts  */
-#define MCP_TX01_INT        0x0C                                    /* Enable TXB0 and TXB1 interru pts */
+#define MCP_TX_INT          0x1C                                    /* Enable all transmit interrupts  */
+#define MCP_TX01_INT        0x0C                                    /* Enable TXB0 and TXB1 interrupts */
 #define MCP_RX_INT          0x03                                    /* Enable receive interrupts        */
 #define MCP_NO_INT          0x00                                    /* Disable all interrupts           */
 
 #define MCP_TX01_MASK       0x14
 #define MCP_TX_MASK        0x54
-
-#if !defined(MCP2515_SPI)
-#define MCP2515_SPI hwSPI //!< default SPI
-#endif
 
 /*
  *   Define SPI Instruction Set
@@ -450,6 +448,9 @@
 #define MCP_20MHZ    0
 #define MCP_16MHZ    1
 #define MCP_8MHZ     2
+#define MCP_CLOCK_SELECT 3
+#define MCP_CLKOUT_ENABLE 4
+
 
 #define CAN_4K096BPS 0
 #define CAN_5KBPS    1
@@ -478,6 +479,10 @@
 #define CAN_FAIL       (0xff)
 
 #define CAN_MAX_CHAR_IN_MESSAGE (8)
+
+#define CAN_IS_EXTENDED       0x80000000
+#define CAN_IS_REMOTE_REQUEST 0x40000000
+#define CAN_EXTENDED_ID       0x1FFFFFFF
 
 #endif
 /*********************************************************************************************************

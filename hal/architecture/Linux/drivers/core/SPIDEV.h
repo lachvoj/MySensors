@@ -35,6 +35,16 @@
 // #define SPI_CLOCK_BASE 10000000		// 10Mhz
 #define SPI_CLOCK_BASE 5000000		// 5Mhz
 
+#define SPI_CLOCK_DIV1 1
+#define SPI_CLOCK_DIV2 2
+#define SPI_CLOCK_DIV4 4
+#define SPI_CLOCK_DIV8 8
+#define SPI_CLOCK_DIV16 16
+#define SPI_CLOCK_DIV32 32
+#define SPI_CLOCK_DIV64 64
+#define SPI_CLOCK_DIV128 128
+#define SPI_CLOCK_DIV256 256
+
 // SPI Data mode
 #define SPI_MODE0 SPI_MODE_0
 #define SPI_MODE1 SPI_MODE_1
