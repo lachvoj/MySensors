@@ -20,7 +20,7 @@
 #ifndef MyHwSTM32F1_h
 #define MyHwSTM32F1_h
 
-#include <libmaple/iwdg.h>
+// #include <libmaple/iwdg.h>
 #include <itoa.h>
 #include <EEPROM.h>
 #include <SPI.h>
@@ -53,9 +53,9 @@
 #endif
 
 // mapping
-#define vsnprintf_P vsnprintf
-#define strncpy_P strncpy
-#define printf_P printf
+// #define vsnprintf_P vsnprintf
+// #define strncpy_P strncpy
+// #define printf_P printf
 #define yield()				  // not defined
 
 #ifndef digitalPinToInterrupt
@@ -65,8 +65,8 @@
 #define hwDigitalWrite(__pin, __value) digitalWrite(__pin, __value)
 #define hwDigitalRead(__pin) digitalRead(__pin)
 #define hwPinMode(__pin, __value) pinMode(__pin, __value)
-#define hwWatchdogReset() iwdg_feed()
-#define hwReboot() nvic_sys_reset()
+#define hwWatchdogReset() IWatchdog.reload()
+#define hwReboot() HAL_NVIC_SystemReset()
 #define hwMillis() millis()
 #define hwGetSleepRemaining() (0ul)
 

@@ -19,6 +19,8 @@
 
 #include "MyHwSTM32F1.h"
 
+#include <IWatchdog.h>
+
 /*
 * Pinout STM32F103C8 dev board:
 * http://wiki.stm32duino.com/images/a/ae/Bluepillpinout.gif
@@ -50,16 +52,8 @@ bool hwInit(void)
 	while (!MY_SERIALDEVICE) {}
 #endif
 #endif
-	if (EEPROM.init() == EEPROM_OK) {
-		uint16 cnt;
-		EEPROM.count(&cnt);
-		if(cnt>=EEPROM.maxcount()) {
-			// tmp, WIP: format eeprom if full
-			EEPROM.format();
-		}
-		return true;
-	}
-	return false;
+
+	return true;
 }
 
 void hwReadConfigBlock(void *buf, void *addr, size_t length)
@@ -121,13 +115,33 @@ int8_t hwSleep(const uint8_t interrupt1, const uint8_t mode1, const uint8_t inte
 	return MY_SLEEP_NOT_POSSIBLE;
 }
 
+uint16_t adc_read(ADC_TypeDef *dev, uint8_t channel)
+{
+	uint32_t tmp = dev->SQR1;
+    tmp &= ~ADC_SQR1_L;
+    tmp |= 0 << 20;
+    dev->SQR1 = tmp;
+
+	dev->SQR3 = channel;
+	dev->CR2 |= ADC_CR2_SWSTART;
+	while (!(dev->SR & ADC_SR_EOC));
+
+	return (uint16_t)(dev->DR & ADC_DR_DATA);
+}
+
+void adc_calibrate(ADC_TypeDef *dev) {
+    dev->CR2 |= ADC_CR2_RSTCAL;
+    while (dev->CR2 & ADC_CR2_RSTCAL);
+
+    dev->CR2 |= ADC_CR2_RSTCAL;
+    while (dev->CR2 & ADC_CR2_RSTCAL);
+}
 
 void hwRandomNumberInit(void)
 {
 	// use internal temperature sensor as noise source
-	adc_reg_map *regs = ADC1->regs;
-	regs->CR2 |= ADC_CR2_TSVREFE;
-	regs->SMPR1 |= ADC_SMPR1_SMP16;
+	ADC1->CR2 |= ADC_CR2_TSVREFE;
+	ADC1->SMPR1 |= ADC_SMPR1_SMP16;
 
 	uint32_t seed = 0;
 	uint16_t currentValue = 0;
@@ -145,7 +159,7 @@ void hwRandomNumberInit(void)
 		seed ^= ( (newValue + hwMillis()) & 7) << i;
 	}
 	randomSeed(seed);
-	regs->CR2 &= ~ADC_CR2_TSVREFE; // disable VREFINT and temp sensor
+	ADC1->CR2 &= ~ADC_CR2_TSVREFE; // disable VREFINT and temp sensor
 }
 
 bool hwUniqueID(unique_id_t *uniqueID)
@@ -156,13 +170,12 @@ bool hwUniqueID(unique_id_t *uniqueID)
 
 uint16_t hwCPUVoltage(void)
 {
-	adc_reg_map *regs = ADC1->regs;
-	regs->CR2 |= ADC_CR2_TSVREFE; // enable VREFINT and temp sensor
-	regs->SMPR1 =  ADC_SMPR1_SMP17; // sample rate for VREFINT ADC channel
+	ADC1->CR2 |= ADC_CR2_TSVREFE; // enable VREFINT and temp sensor
+	ADC1->SMPR1 =  ADC_SMPR1_SMP17; // sample rate for VREFINT ADC channel
 	adc_calibrate(ADC1);
 
 	const uint16_t vdd = adc_read(ADC1, 17);
-	regs->CR2 &= ~ADC_CR2_TSVREFE; // disable VREFINT and temp sensor
+	ADC1->CR2 &= ~ADC_CR2_TSVREFE; // disable VREFINT and temp sensor
 	return (uint16_t)(1200u * 4096u / vdd);
 }
 
@@ -173,9 +186,8 @@ uint16_t hwCPUFrequency(void)
 
 int8_t hwCPUTemperature(void)
 {
-	adc_reg_map *regs = ADC1->regs;
-	regs->CR2 |= ADC_CR2_TSVREFE; // enable VREFINT and Temperature sensor
-	regs->SMPR1 |= ADC_SMPR1_SMP16 | ADC_SMPR1_SMP17;
+	ADC1->CR2 |= ADC_CR2_TSVREFE; // enable VREFINT and Temperature sensor
+	ADC1->SMPR1 |= ADC_SMPR1_SMP16 | ADC_SMPR1_SMP17;
 	adc_calibrate(ADC1);
 
 	//const uint16_t adc_temp = adc_read(ADC1, 16);
@@ -183,7 +195,7 @@ int8_t hwCPUTemperature(void)
 	// calibrated at 25°C, ADC output = 1430mV, avg slope = 4.3mV / °C, increasing temp ~ lower voltage
 	const int8_t temp = static_cast<int8_t>((1430.0 - (adc_read(ADC1, 16) * 1200 / adc_read(ADC1,
 	                                        17))) / 4.3 + 25.0);
-	regs->CR2 &= ~ADC_CR2_TSVREFE; // disable VREFINT and temp sensor
+	ADC1->CR2 &= ~ADC_CR2_TSVREFE; // disable VREFINT and temp sensor
 	return (temp - MY_STM32F1_TEMPERATURE_OFFSET) / MY_STM32F1_TEMPERATURE_GAIN;
 }
 

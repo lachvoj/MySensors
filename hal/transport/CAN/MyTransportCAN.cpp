@@ -1,6 +1,14 @@
 #include "MyTransportCAN.h"
+
+#if defined(ARDUINO_ARCH_STM32F1) && !defined(MCP_CAN)
+#include "driver/STM32Fx/STM32FxCAN.cpp"
+STM32FxCAN CAN0(CAN_CS);
+#else
 #include "hal/transport/CAN/driver/mcp_can.cpp"
 #include "hal/transport/CAN/driver/mcp_can.h"
+MCP_CAN CAN0(CAN_CS);
+#endif
+
 
 #if defined(MY_DEBUG_VERBOSE_CAN)
 #define CAN_DEBUG(x, ...) DEBUG_OUTPUT(x, ##__VA_ARGS__) //!< Debug print
@@ -8,7 +16,6 @@
 #define CAN_DEBUG(x, ...) //!< DEBUG null
 #endif
 
-MCP_CAN CAN0(CAN_CS);
 bool canInitialized = false;
 
 // input buffer for raw data (from library).
