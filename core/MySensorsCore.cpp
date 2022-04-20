@@ -60,7 +60,8 @@ void _process(void)
 	if (processLock) {
 		CORE_DEBUG(PSTR("!MCO:PRO:RC=%" PRIu8 "\n"), processLock);	// recursive call detected
 	}
-	processLock++;
+	if (processLock < 254)
+		processLock++;
 #endif
 	doYield();
 
@@ -81,7 +82,8 @@ void _process(void)
 	usleep(10000); // 10ms
 #endif
 #if defined(MY_DEBUG_VERBOSE_CORE)
-	processLock--;
+	if (processLock > 0)
+		processLock--;
 #endif
 }
 
