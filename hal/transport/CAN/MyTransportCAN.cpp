@@ -263,6 +263,8 @@ bool CAN_transportSend(const uint8_t to, const void *data, const uint8_t len, co
             return false;
         }
     }
+
+    return false;
 }
 
 bool CAN_transportDataAvailable(void)
@@ -332,14 +334,14 @@ uint8_t CAN_transportReceive(void *data, const uint8_t maxBufSize)
 {
     uint8_t slot = maxBufSize;
     uint8_t i;
-    for (i = 0; i < maxBufSize; i++)
+    for (i = 0; i < CAN_BUF_SIZE; i++)
     {
         if (packets[i].ready)
         {
             slot = i;
         }
     }
-    if (slot < maxBufSize)
+    if (slot < CAN_BUF_SIZE)
     {
         memcpy(data, packets[slot].data, packets[slot].len);
         i = packets[slot].len;
