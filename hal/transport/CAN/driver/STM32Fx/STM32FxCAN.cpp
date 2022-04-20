@@ -373,21 +373,22 @@ uint8_t STM32FxCAN::sendMsgBuf(uint32_t id, uint8_t ext, uint8_t len, uint8_t *b
     }
     CAN_tx_msg.type = DATA_FRAME;
 
-    uint8_t lenM1 = len - 1;
-    for (uint8_t i = 0; i < len; ++i)
+    if (len <= 8)
     {
-        uint8_t imod8 = i % 8;
-        CAN_tx_msg.data[imod8] = buf[i];
+        memcpy(CAN_tx_msg.data, buf, len);
+        return CANSend(&CAN_tx_msg);
+    }
 
-        if (imod8 == 7 || i == lenM1)
-        {
-            if (i == lenM1)
-                CAN_tx_msg.len = imod8;
-            else
-                CAN_tx_msg.len = 8;
-            if (CANSend(&CAN_tx_msg) != CAN_OK)
+    uint8_t noOfFrames = len / 8;
+    if (len % 8 != 0)
+        noOfFrames++;
+
+    for (uint8_t currentFrame = 0; currentFrame < noOfFrames; ++currentFrame)
+    {
+        uint8_t partLen = (currentFrame * 8 <= len) ? 8 : len % 8;
+        memcpy(CAN_tx_msg.data, buf[currentFrame * 8] , partLen);
+        if (CANSend(&CAN_tx_msg) != CAN_OK)
                 return CAN_FAILTX;
-        }
     }
 
     return CAN_OK;
