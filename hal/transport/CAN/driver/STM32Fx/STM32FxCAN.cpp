@@ -1,39 +1,89 @@
-#include <stm32_def.h>
-
 #include "STM32FxCAN.h"
 
-/* Symbolic names for formats of CAN message                                 */
-typedef enum
-{
-    STANDARD_FORMAT = 0,
-    EXTENDED_FORMAT
-} CAN_FORMAT;
+#define CAN_EXT_ID_MASK 0x1FFFFFFFU
+#define CAN_STD_ID_MASK 0x000007FFU
+#define STM32_CAN_TIR_TXRQ (1U << 0U) // Bit 0: Transmit Mailbox Request
+#define STM32_CAN_RIR_RTR (1U << 1U)  // Bit 1: Remote Transmission Request
+#define STM32_CAN_RIR_IDE (1U << 2U)  // Bit 2: Identifier Extension
+#define STM32_CAN_TIR_RTR (1U << 1U)  // Bit 1: Remote Transmission Request
+#define STM32_CAN_TIR_IDE (1U << 2U)  // Bit 2: Identifier Extension
 
-/* Symbolic names for type of CAN message                                    */
-typedef enum
+STM32FxCAN::STM32FxCAN(uint8_t canDevice)
 {
-    DATA_FRAME = 0,
-    REMOTE_FRAME
-} CAN_FRAME;
+    switch (canDevice)
+    {
+    case 1: _canDev = CAN1; break;
+    }
+}
 
-typedef struct
+/**
+ * Encodes CAN messages using the CAN message struct and populates the
+ * data registers with the sent.
+ *
+ * @params CAN_tx_msg - CAN message structure for transmission
+ *
+ */
+uint8_t STM32FxCAN::send(CAN_msg_t *CAN_tx_msg)
 {
-    uint32_t id;     /* 29 bit identifier                               */
-    uint8_t data[8]; /* Data field                                      */
-    uint8_t len;     /* Length of data field in bytes                   */
-    uint8_t ch;      /* Object channel(Not use)                         */
-    uint8_t format;  /* 0 - STANDARD, 1- EXTENDED IDENTIFIER            */
-    uint8_t type;    /* 0 - DATA FRAME, 1 - REMOTE FRAME                */
-} CAN_msg_t;
+    // get free mailbox
+    uint8_t mbIdx = 0;
+    volatile int count = 0;
+    while (true)
+    {
+        // any of mailboxes becomes empty while loop
+        if (count >= 1000000)
+            return CAN_FAILTX;
+        count++;
 
-typedef const struct
-{
-    uint8_t TS2;
-    uint8_t TS1;
-    uint8_t BRP;
-} CAN_bit_timing_config_t;
+        uint8_t tme = ((_canDev->TSR & 0x1C000000UL) >> 26);
+        if ((tme & 0x01U) == 1)
+        {
+            mbIdx = 0;
+            break;
+        }
+        if ((tme & 0x02U) == 2)
+        {
+            mbIdx = 1;
+            break;
+        }
+        if ((tme & 0x04U) == 4)
+        {
+            mbIdx = 2;
+            break;
+        }
+    }
 
-CAN_bit_timing_config_t can_configs[6] = {{2, 13, 45}, {2, 15, 20}, {2, 13, 18}, {2, 13, 9}, {2, 15, 4}, {2, 15, 2}};
+    uint32_t out = 0;
+    if (CAN_tx_msg->format == EXTENDED_FORMAT)
+    { // Extended frame format
+        out = ((CAN_tx_msg->id & CAN_EXT_ID_MASK) << 3U) | STM32_CAN_TIR_IDE;
+    }
+    else
+    { // Standard frame format
+        out = ((CAN_tx_msg->id & CAN_STD_ID_MASK) << 21U);
+    }
+
+    // Remote frame
+    if (CAN_tx_msg->type == REMOTE_FRAME)
+    {
+        out |= STM32_CAN_TIR_RTR;
+    }
+
+    _canDev->sTxMailBox[mbIdx].TDTR &= ~(0xF);
+    _canDev->sTxMailBox[mbIdx].TDTR |= CAN_tx_msg->len & 0xFUL;
+
+    _canDev->sTxMailBox[mbIdx].TDLR =
+        (((uint32_t)CAN_tx_msg->data[3] << 24) | ((uint32_t)CAN_tx_msg->data[2] << 16) |
+         ((uint32_t)CAN_tx_msg->data[1] << 8) | ((uint32_t)CAN_tx_msg->data[0]));
+    _canDev->sTxMailBox[mbIdx].TDHR =
+        (((uint32_t)CAN_tx_msg->data[7] << 24) | ((uint32_t)CAN_tx_msg->data[6] << 16) |
+         ((uint32_t)CAN_tx_msg->data[5] << 8) | ((uint32_t)CAN_tx_msg->data[4]));
+
+    // Send Go
+    _canDev->sTxMailBox[mbIdx].TIR = out | STM32_CAN_TIR_TXRQ;
+
+    return CAN_OK;
+}
 
 /**
  * Initializes the CAN filter registers.
@@ -54,111 +104,49 @@ CAN_bit_timing_config_t can_configs[6] = {{2, 13, 45}, {2, 15, 20}, {2, 13, 18},
  * @params: bank2   - Filter bank register 2
  *
  */
-uint8_t CANSetFilter(uint8_t index, uint8_t scale, uint8_t mode, uint8_t fifo, uint32_t bank1, uint32_t bank2)
+uint8_t STM32FxCAN::setFilter(uint8_t index, uint8_t scale, uint8_t mode, uint8_t fifo, uint32_t bank1, uint32_t bank2)
 {
     if (index > 27)
-        return 1;
+        return CAN_FAILINIT;
 
-    CAN1->FMR |= 0x1UL; // Set to filter initialization mode
+    _canDev->FMR |= 0x1UL; // Set to filter initialization mode
 
-    CAN1->FA1R &= ~(0x1UL << index); // Deactivate filter
+    _canDev->FA1R &= ~(0x1UL << index); // Deactivate filter
 
     if (scale == 0)
     {
-        CAN1->FS1R &= ~(0x1UL << index); // Set filter to Dual 16-bit scale configuration
+        _canDev->FS1R &= ~(0x1UL << index); // Set filter to Dual 16-bit scale configuration
     }
     else
     {
-        CAN1->FS1R |= (0x1UL << index); // Set filter to single 32 bit configuration
+        _canDev->FS1R |= (0x1UL << index); // Set filter to single 32 bit configuration
     }
     if (mode == 0)
     {
-        CAN1->FM1R &= ~(0x1UL << index); // Set filter to Mask mode
+        _canDev->FM1R &= ~(0x1UL << index); // Set filter to Mask mode
     }
     else
     {
-        CAN1->FM1R |= (0x1UL << index); // Set filter to List mode
+        _canDev->FM1R |= (0x1UL << index); // Set filter to List mode
     }
 
     if (fifo == 0)
     {
-        CAN1->FFA1R &= ~(0x1UL << index); // Set filter assigned to FIFO 0
+        _canDev->FFA1R &= ~(0x1UL << index); // Set filter assigned to FIFO 0
     }
     else
     {
-        CAN1->FFA1R |= (0x1UL << index); // Set filter assigned to FIFO 1
+        _canDev->FFA1R |= (0x1UL << index); // Set filter assigned to FIFO 1
     }
 
-    CAN1->sFilterRegister[index].FR1 = bank1; // Set filter bank registers1
-    CAN1->sFilterRegister[index].FR2 = bank2; // Set filter bank registers2
+    _canDev->sFilterRegister[index].FR1 = bank1; // Set filter bank registers1
+    _canDev->sFilterRegister[index].FR2 = bank2; // Set filter bank registers2
 
-    CAN1->FA1R |= (0x1UL << index); // Activate filter
+    _canDev->FA1R |= (0x1UL << index); // Activate filter
 
-    CAN1->FMR &= ~(0x1UL); // Deactivate initialization mode
-
-    return 0;
-}
-
-#define CAN_EXT_ID_MASK 0x1FFFFFFFU
-#define CAN_STD_ID_MASK 0x000007FFU
-#define STM32_CAN_TIR_TXRQ (1U << 0U) // Bit 0: Transmit Mailbox Request
-#define STM32_CAN_RIR_RTR (1U << 1U)  // Bit 1: Remote Transmission Request
-#define STM32_CAN_RIR_IDE (1U << 2U)  // Bit 2: Identifier Extension
-#define STM32_CAN_TIR_RTR (1U << 1U)  // Bit 1: Remote Transmission Request
-#define STM32_CAN_TIR_IDE (1U << 2U)  // Bit 2: Identifier Extension
-
-/**
- * Encodes CAN messages using the CAN message struct and populates the
- * data registers with the sent.
- *
- * @params CAN_tx_msg - CAN message structure for transmission
- *
- */
-uint8_t CANSend(CAN_msg_t *CAN_tx_msg)
-{
-    volatile int count = 0;
-
-    uint32_t out = 0;
-    if (CAN_tx_msg->format == EXTENDED_FORMAT)
-    { // Extended frame format
-        out = ((CAN_tx_msg->id & CAN_EXT_ID_MASK) << 3U) | STM32_CAN_TIR_IDE;
-    }
-    else
-    { // Standard frame format
-        out = ((CAN_tx_msg->id & CAN_STD_ID_MASK) << 21U);
-    }
-
-    // Remote frame
-    if (CAN_tx_msg->type == REMOTE_FRAME)
-    {
-        out |= STM32_CAN_TIR_RTR;
-    }
-
-    CAN1->sTxMailBox[0].TDTR &= ~(0xF);
-    CAN1->sTxMailBox[0].TDTR |= CAN_tx_msg->len & 0xFUL;
-
-    CAN1->sTxMailBox[0].TDLR =
-        (((uint32_t)CAN_tx_msg->data[3] << 24) | ((uint32_t)CAN_tx_msg->data[2] << 16) |
-         ((uint32_t)CAN_tx_msg->data[1] << 8) | ((uint32_t)CAN_tx_msg->data[0]));
-    CAN1->sTxMailBox[0].TDHR =
-        (((uint32_t)CAN_tx_msg->data[7] << 24) | ((uint32_t)CAN_tx_msg->data[6] << 16) |
-         ((uint32_t)CAN_tx_msg->data[5] << 8) | ((uint32_t)CAN_tx_msg->data[4]));
-
-    // Send Go
-    CAN1->sTxMailBox[0].TIR = out | STM32_CAN_TIR_TXRQ;
-
-    // Wait until the mailbox is empty
-    while (CAN1->sTxMailBox[0].TIR & 0x1UL && count++ < 1000000) {};
-
-    // The mailbox don't becomes empty while loop
-    if (CAN1->sTxMailBox[0].TIR & 0x1UL)
-        return CAN_FAILTX;
+    _canDev->FMR &= ~(0x1UL); // Deactivate initialization mode
 
     return CAN_OK;
-}
-
-STM32FxCAN::STM32FxCAN(uint8_t _CS)
-{
 }
 
 bool STM32FxCAN::isInitialized()
@@ -170,6 +158,16 @@ bool STM32FxCAN::isInitialized()
 
     return _initialized;
 }
+
+typedef const struct
+{
+    uint8_t TS2;
+    uint8_t TS1;
+    uint8_t BRP;
+} CAN_bit_timing_config_t;
+
+static const CAN_bit_timing_config_t can_configs[6] =
+    {{2, 13, 45}, {2, 15, 20}, {2, 13, 18}, {2, 13, 9}, {2, 15, 4}, {2, 15, 2}};
 
 uint8_t STM32FxCAN::begin(uint8_t idmodeset, uint8_t speedset, uint8_t clockset)
 {
@@ -264,46 +262,47 @@ uint8_t STM32FxCAN::begin(uint8_t idmodeset, uint8_t speedset, uint8_t clockset)
     }
 #endif
 
-    CAN1->MCR |= 0x1UL; // Require CAN1 to Initialization mode
-    while (!(CAN1->MSR & 0x1UL))
+    _canDev->MCR |= 0x1UL; // Require CAN1 to Initialization mode
+    while (!(_canDev->MSR & 0x1UL))
         ; // Wait for Initialization mode
 
-    // CAN1->MCR = 0x51UL;                 // Hardware initialization(No
-    // automatic retransmission)
-    CAN1->MCR = 0x41UL; // Hardware initialization(With automatic retransmission)
+    // _canDev->MCR = 0x51UL;  // Hardware initialization(No automatic retransmission)
+    _canDev->MCR = 0x41UL; // Hardware initialization(With automatic retransmission)
+
+    // _canDev->MCR |= 0x4UL; //Tx FIFO priority by request order
 
     // Set bit rates
-    CAN1->BTR &= ~(((0x03) << 24) | ((0x07) << 20) | ((0x0F) << 16) | (0x1FF));
-    CAN1->BTR |= (((can_configs[bitrate].TS2 - 1) & 0x07) << 20) | (((can_configs[bitrate].TS1 - 1) & 0x0F) << 16) |
-                 ((can_configs[bitrate].BRP - 1) & 0x1FF);
+    _canDev->BTR &= ~(((0x03) << 24) | ((0x07) << 20) | ((0x0F) << 16) | (0x1FF));
+    _canDev->BTR |= (((can_configs[bitrate].TS2 - 1) & 0x07) << 20) | (((can_configs[bitrate].TS1 - 1) & 0x0F) << 16) |
+                    ((can_configs[bitrate].BRP - 1) & 0x1FF);
 
     // Configure Filters to default values
-    CAN1->FMR |= 0x1UL;      // Set to filter initialization mode
-    CAN1->FMR &= 0xFFFFC0FF; // Clear CAN2 start bank
+    _canDev->FMR |= 0x1UL;      // Set to filter initialization mode
+    _canDev->FMR &= 0xFFFFC0FF; // Clear CAN2 start bank
 
     // bxCAN has 28 filters.
     // These filters are used for both CAN1 and CAN2.
     // STM32F103 has only CAN1, so all 28 are used for CAN1
-    CAN1->FMR |= 0x1C << 8; // Assign all filters to CAN1
+    _canDev->FMR |= 0x1C << 8; // Assign all filters to CAN1
 
     // Set filter 0
     // Single 32-bit scale configuration
     // Two 32-bit registers of filter bank x are in Identifier Mask mode
     // Filter assigned to FIFO 0
     // Filter bank register to all 0
-    CANSetFilter(0, 1, 0, 0, 0x0UL, 0x0UL);
+    setFilter(0, 1, 0, 0, 0x0UL, 0x0UL);
 
-    CAN1->FMR &= ~(0x1UL); // Deactivate initialization mode
+    _canDev->FMR &= ~(0x1UL); // Deactivate initialization mode
 
     uint16_t TimeoutMilliseconds = 1000;
     bool can1 = false;
-    CAN1->MCR &= ~(0x1UL); // Require CAN1 to normal mode
+    _canDev->MCR &= ~(0x1UL); // Require CAN1 to normal mode
 
     // Wait for normal mode
     // If the connection is not correct, it will not return to normal mode.
     for (uint16_t wait_ack = 0; wait_ack < TimeoutMilliseconds; wait_ack++)
     {
-        if ((CAN1->MSR & 0x1UL) == 0)
+        if ((_canDev->MSR & 0x1UL) == 0)
         {
             can1 = true;
             break;
@@ -318,39 +317,42 @@ uint8_t STM32FxCAN::begin(uint8_t idmodeset, uint8_t speedset, uint8_t clockset)
     return CAN_OK;
 }
 
-uint8_t STM32FxCAN::init_Mask(uint8_t num, uint8_t ext, uint32_t ulData)
+uint8_t STM32FxCAN::setFilterMask32(uint8_t index, uint32_t filter, uint32_t mask, uint8_t fifo)
 {
-    _actualMask = ulData;
-    return 0;
+    return setFilter(index, 1, 0, fifo, (filter << 3) | 4, (mask << 3) | 4);
 }
 
-uint8_t STM32FxCAN::init_Mask(uint8_t num, uint32_t ulData)
+uint8_t STM32FxCAN::setFilterList32(uint8_t index, uint32_t filter1, uint32_t filter2, uint8_t fifo)
 {
-    return init_Mask(num, 1, ulData);
+    return setFilter(index, 1, 1, fifo, (filter1 << 3) | 4, (filter2 << 3) | 4);
 }
 
-uint8_t STM32FxCAN::init_Filt(uint8_t num, uint8_t ext, uint32_t ulData)
+uint8_t STM32FxCAN::setFilterMask16(
+    uint8_t index,
+    uint16_t filter1,
+    uint16_t mask1,
+    uint16_t filter2,
+    uint16_t mask2,
+    uint8_t fifo)
 {
-    switch (ext)
-    {
-    case 0:
-    case 1: break;
+    uint32_t f1 = (mask1 << 21) | (filter1 << 5);
+    uint32_t f2 = (mask2 << 21) | (filter2 << 5);
 
-    default: return CAN_FAILINIT;
-    }
-
-    CANSetFilter(num, ext, 0, 0, _actualMask, ulData);
-
-    return CAN_OK;
+    return setFilter(index, 0, 0, fifo, f1, f2);
 }
 
-uint8_t STM32FxCAN::init_Filt(uint8_t num, uint32_t ulData)
+uint8_t STM32FxCAN::setFilterList16(
+    uint8_t index,
+    uint16_t filter1,
+    uint16_t filter2,
+    uint16_t filter3,
+    uint16_t filter4,
+    uint8_t fifo)
 {
-    uint8_t ext = 0;
-    if ((ulData & CAN_IS_EXTENDED) == CAN_IS_EXTENDED)
-        ext = 1;
+    uint32_t f1 = (filter2 << 21) | (filter1 << 5);
+    uint32_t f2 = (filter4 << 21) | (filter3 << 5);
 
-    return init_Filt(num, ext, ulData);
+    return setFilter(index, 0, 1, fifo, f1, f2);
 }
 
 uint8_t STM32FxCAN::setMode(uint8_t opMode)
@@ -369,14 +371,14 @@ uint8_t STM32FxCAN::sendMsgBuf(uint32_t id, uint8_t ext, uint8_t len, uint8_t *b
     if (len == 0)
     {
         CAN_tx_msg.type = REMOTE_FRAME;
-        return CANSend(&CAN_tx_msg);
+        return send(&CAN_tx_msg);
     }
     CAN_tx_msg.type = DATA_FRAME;
 
     if (len <= 8)
     {
         memcpy(CAN_tx_msg.data, buf, len);
-        return CANSend(&CAN_tx_msg);
+        return send(&CAN_tx_msg);
     }
 
     uint8_t noOfFrames = len / 8;
@@ -385,10 +387,10 @@ uint8_t STM32FxCAN::sendMsgBuf(uint32_t id, uint8_t ext, uint8_t len, uint8_t *b
 
     for (uint8_t currentFrame = 0; currentFrame < noOfFrames; ++currentFrame)
     {
-        uint8_t partLen = (currentFrame * 8 <= len) ? 8 : len % 8;
-        memcpy(CAN_tx_msg.data, buf[currentFrame * 8] , partLen);
-        if (CANSend(&CAN_tx_msg) != CAN_OK)
-                return CAN_FAILTX;
+        CAN_tx_msg.len = (currentFrame * 8 <= len) ? 8 : len % 8;
+        memcpy(CAN_tx_msg.data, buf + (currentFrame * 8), CAN_tx_msg.len);
+        if (send(&CAN_tx_msg) != CAN_OK)
+            return CAN_FAILTX;
     }
 
     return CAN_OK;
@@ -408,25 +410,27 @@ uint8_t STM32FxCAN::readMsgBuf(uint32_t *id, uint8_t *ext, uint8_t *len, uint8_t
     if (!isInitialized())
         return CAN_FAILINIT;
 
-    *id = CAN1->sFIFOMailBox[0].RIR;
-    if ((*id & STM32_CAN_RIR_IDE) == 0)
-        *ext = 0;
+    *ext = ((_canDev->sFIFOMailBox[0].RIR & STM32_CAN_RIR_IDE) >> 2);
+    if (*ext)
+        *id = _canDev->sFIFOMailBox[0].RIR >> 3; // extended id
     else
-        *ext = 1;
+        *id = _canDev->sFIFOMailBox[0].RIR >> 21; // standard id
 
-    *len = (CAN1->sFIFOMailBox[0].RDTR) & 0xFUL;
-    buf[0] = 0xFFUL & CAN1->sFIFOMailBox[0].RDLR;
-    buf[1] = 0xFFUL & (CAN1->sFIFOMailBox[0].RDLR >> 8);
-    buf[2] = 0xFFUL & (CAN1->sFIFOMailBox[0].RDLR >> 16);
-    buf[3] = 0xFFUL & (CAN1->sFIFOMailBox[0].RDLR >> 24);
-    buf[4] = 0xFFUL & CAN1->sFIFOMailBox[0].RDHR;
-    buf[5] = 0xFFUL & (CAN1->sFIFOMailBox[0].RDHR >> 8);
-    buf[6] = 0xFFUL & (CAN1->sFIFOMailBox[0].RDHR >> 16);
-    buf[7] = 0xFFUL & (CAN1->sFIFOMailBox[0].RDHR >> 24);
+    *len = (_canDev->sFIFOMailBox[0].RDTR) & 0xFUL;
+    ((uint32_t *)buf)[0] = _canDev->sFIFOMailBox[0].RDLR;
+    ((uint32_t *)buf)[1] = _canDev->sFIFOMailBox[0].RDHR;
+    // buf[0] = 0xFFUL & _canDev->sFIFOMailBox[0].RDLR;
+    // buf[1] = 0xFFUL & (_canDev->sFIFOMailBox[0].RDLR >> 8);
+    // buf[2] = 0xFFUL & (_canDev->sFIFOMailBox[0].RDLR >> 16);
+    // buf[3] = 0xFFUL & (_canDev->sFIFOMailBox[0].RDLR >> 24);
+    // buf[4] = 0xFFUL & _canDev->sFIFOMailBox[0].RDHR;
+    // buf[5] = 0xFFUL & (_canDev->sFIFOMailBox[0].RDHR >> 8);
+    // buf[6] = 0xFFUL & (_canDev->sFIFOMailBox[0].RDHR >> 16);
+    // buf[7] = 0xFFUL & (_canDev->sFIFOMailBox[0].RDHR >> 24);
 
     // Release FIFO 0 output mailbox.
     // Make the next incoming message available.
-    CAN1->RF0R |= 0x20UL;
+    _canDev->RF0R |= 0x20UL;
 
     return CAN_OK;
 }
@@ -441,7 +445,7 @@ uint8_t STM32FxCAN::readMsgBuf(uint32_t *id, uint8_t *len, uint8_t *buf)
 uint8_t STM32FxCAN::checkReceive(void)
 {
     // Check for pending FIFO 0 messages
-    return CAN1->RF0R & 0x3UL;
+    return _canDev->RF0R & 0x3UL;
 }
 
 uint8_t STM32FxCAN::checkError(void)
@@ -451,17 +455,17 @@ uint8_t STM32FxCAN::checkError(void)
 
 uint8_t STM32FxCAN::getError(void)
 {
-    return 0;
+    return (uint8_t)((_canDev->ESR & CAN_ESR_LEC_Msk) >> CAN_ESR_LEC_Pos);
 }
 
 uint8_t STM32FxCAN::errorCountRX(void)
 {
-    return 0;
+    return (uint8_t)((_canDev->ESR & CAN_ESR_REC_Msk) >> CAN_ESR_REC_Pos);
 }
 
 uint8_t STM32FxCAN::errorCountTX(void)
 {
-    return 0;
+    return (uint8_t)((_canDev->ESR & CAN_ESR_TEC_Msk) >> CAN_ESR_TEC_Pos);
 }
 
 uint8_t STM32FxCAN::enOneShotTX(void)
@@ -486,5 +490,34 @@ uint8_t STM32FxCAN::setGPO(uint8_t data)
 
 uint8_t STM32FxCAN::getGPI(void)
 {
+    return 0;
+}
+
+uint8_t STM32FxCAN::enableRxInterrupt(void)
+{
+    _canDev->IER |= CAN_IER_FMPIE0;
+    return 0;
+}
+
+uint8_t STM32FxCAN::disableRxInterrupt(void)
+{
+    _canDev->IER &= ~(CAN_IER_FMPIE0);
+
+    return 0;
+}
+
+#define MMIO32(x) (*(volatile uint32_t *)(x))
+uint8_t STM32FxCAN::attachRxInterrupt(void func())
+{
+    static uint8_t newTbl[0xF0] __attribute__((aligned(0x100)));
+    uint8_t *pNewTbl = newTbl;
+    int origTbl = MMIO32(SCB_BASE + 0x008);
+    for (int j = 0; j < 0x3c; j++) // table length = 60 integers
+        MMIO32((pNewTbl + (j << 2))) = MMIO32((origTbl + (j << 2)));
+
+    uint32_t canVectTblAdr = reinterpret_cast<uint32_t>(pNewTbl) + (36 << 2); // calc new ISR addr in new vector tbl
+    MMIO32(canVectTblAdr) = reinterpret_cast<uint32_t>(func);       // set new CAN/USB ISR jump addr into new table
+    MMIO32(SCB_BASE + 0x008) = reinterpret_cast<uint32_t>(pNewTbl); // load vtor register with new tbl location
+
     return 0;
 }
