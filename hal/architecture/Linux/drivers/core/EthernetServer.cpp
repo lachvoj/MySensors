@@ -101,14 +101,14 @@ void EthernetServer::begin(IPAddress address)
 		return;
 	}
 
-	freeaddrinfo(servinfo);
-
 	fcntl(sockfd, F_SETFL, O_NONBLOCK);
 
 	struct sockaddr_in *ipv4 = (struct sockaddr_in *)p->ai_addr;
 	void *addr = &(ipv4->sin_addr);
 	inet_ntop(p->ai_family, addr, ipstr, sizeof ipstr);
 	logDebug("Listening for connections on %s:%s\n", ipstr, portstr);
+
+	freeaddrinfo(servinfo);
 }
 
 bool EthernetServer::hasClient()
