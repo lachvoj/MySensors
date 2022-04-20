@@ -2,7 +2,7 @@
 
 #if defined(ARDUINO_ARCH_STM32F1) && !defined(MCP_CAN)
 #include "driver/STM32Fx/STM32FxCAN.cpp"
-STM32FxCAN CAN0(CAN_CS);
+STM32FxCAN CAN0;
 #else
 #include "hal/transport/CAN/driver/mcp_can.cpp"
 #include "hal/transport/CAN/driver/mcp_can.h"
@@ -43,6 +43,21 @@ typedef struct
 // buffer
 CAN_Packet packets[CAN_BUF_SIZE];
 
+#if defined(ARDUINO_ARCH_STM32F1) && !defined(MCP_CAN)
+bool _initFilters()
+{
+    if (!canInitialized)
+    {
+        return false;
+    }
+    uint8_t err = 0;
+
+    err += CAN0.setFilterMask32(0, BROADCAST_ADDRESS << 8, 0x0000FF00);
+    err += CAN0.setFilterMask32(1, _nodeId << 8, 0x0000FF00);
+
+    return err == 0;
+}
+#else
 // filter incoming messages (MCP2515 feature).
 bool _initFilters()
 {
@@ -53,8 +68,7 @@ bool _initFilters()
     uint8_t err = 0;
     err += CAN0.setMode(MODE_CONFIG);
 
-    err +=
-        CAN0.init_Mask(0, 1, 0x0000FF00); // Init first mask. Only destination address will be used to filter messages
+    err += CAN0.init_Mask(0, 1, 0x0000FF00); // Init first mask. Only dest address will be used to filter messages.
     err += CAN0.init_Filt(0, 1, BROADCAST_ADDRESS << 8); // Init first filter. Accept broadcast messages.
     err += CAN0.init_Filt(1, 1, _nodeId << 8);           // Init second filter. Accept messages send to this node.
     // second mask and filters need to be set. Otherwise all messages would be accepted.
@@ -67,6 +81,7 @@ bool _initFilters()
     hwPinMode(CAN_INT, INPUT);
     return err == 0;
 }
+#endif
 
 bool CAN_transportInit(void)
 {
@@ -269,7 +284,11 @@ bool CAN_transportSend(const uint8_t to, const void *data, const uint8_t len, co
 
 bool CAN_transportDataAvailable(void)
 {
+#if defined(ARDUINO_ARCH_STM32F1) && !defined(MCP_CAN)
+    if (CAN0.checkReceive())
+#else
     if (!hwDigitalRead(CAN_INT))
+#endif
     {                                        // If CAN_INT pin is low, read receive buffer
         CAN0.readMsgBuf(&rxId, &len, rxBuf); // Read data: len = data length, buf = data byte(s)
         long unsigned int from = (rxId & 0x000000FF);
@@ -357,6 +376,7 @@ uint8_t CAN_transportReceive(void *data, const uint8_t maxBufSize)
 void CAN_transportSetAddress(const uint8_t address)
 {
     _nodeId = address;
+    _initFilters();
 }
 
 uint8_t CAN_transportGetAddress(void)
