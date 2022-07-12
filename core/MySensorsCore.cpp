@@ -164,7 +164,10 @@ void _begin(void)
 
 #if defined(MY_SENSOR_NETWORK)
 	// Save static parent ID in eeprom (used by bootloader)
-	hwWriteConfig(EEPROM_PARENT_NODE_ID_ADDRESS, MY_PARENT_NODE_ID);
+	uint8_t myParentNodeID;
+	hwReadConfigBlock(&myParentNodeID, (void*)EEPROM_PARENT_NODE_ID_ADDRESS, SIZE_PARENT_NODE_ID);
+	if (myParentNodeID != MY_PARENT_NODE_ID)
+		hwWriteConfig(EEPROM_PARENT_NODE_ID_ADDRESS, MY_PARENT_NODE_ID);
 	// Initialise transport layer
 	transportInitialise();
 	// Register transport=ready callback
