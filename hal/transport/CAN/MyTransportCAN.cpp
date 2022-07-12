@@ -3,12 +3,17 @@
 #if defined(ARDUINO_ARCH_STM32F1) && !defined(MCP_CAN)
 #include "driver/STM32Fx/STM32FxCAN.cpp"
 STM32FxCAN CAN0;
+#elif defined(__linux__) && defined(LINUX_CAN_CANDEV)
+#include "driver/Linux/CANDEV.cpp"
+#if !defined(LINUX_CAN_CANDEV_DEVICE)
+#define LINUX_CAN_CANDEV_DEVICE "can0"
+#endif
+CANDEVClass CAN0(LINUX_CAN_CANDEV_DEVICE);
 #else
 #include "hal/transport/CAN/driver/mcp_can.cpp"
 #include "hal/transport/CAN/driver/mcp_can.h"
 MCP_CAN CAN0(CAN_CS);
 #endif
-
 
 #if defined(MY_DEBUG_VERBOSE_CAN)
 #define CAN_DEBUG(x, ...) DEBUG_OUTPUT(x, ##__VA_ARGS__) //!< Debug print
@@ -54,6 +59,25 @@ bool _initFilters()
 
     err += CAN0.setFilterMask32(0, BROADCAST_ADDRESS << 8, 0x0000FF00);
     err += CAN0.setFilterMask32(1, _nodeId << 8, 0x0000FF00);
+
+    return err == 0;
+}
+#elif defined(__linux__) && defined(LINUX_CAN_CANDEV)
+bool _initFilters()
+{
+    if (!canInitialized)
+    {
+        return false;
+    }
+
+    uint8_t err = 0;
+
+    struct can_filter rfilter[2];
+    rfilter[0].can_id = BROADCAST_ADDRESS << 8 | CAN_EFF_FLAG;
+    rfilter[0].can_mask =  0x0000FF00 | CAN_RTR_FLAG | CAN_EFF_FLAG;
+    rfilter[1].can_id = _nodeId << 8 | CAN_EFF_FLAG;
+    rfilter[1].can_mask =  0x0000FF00 | CAN_RTR_FLAG | CAN_EFF_FLAG;
+    // CAN0.setFilterMask(rfilter, 2);
 
     return err == 0;
 }
@@ -286,11 +310,16 @@ bool CAN_transportDataAvailable(void)
 {
 #if defined(ARDUINO_ARCH_STM32F1) && !defined(MCP_CAN)
     if (CAN0.checkReceive())
-#else
-    if (!hwDigitalRead(CAN_INT))
-#endif
-    {                                        // If CAN_INT pin is low, read receive buffer
+    {
         CAN0.readMsgBuf(&rxId, &len, rxBuf); // Read data: len = data length, buf = data byte(s)
+#elif defined(__linux__) && defined(LINUX_CAN_CANDEV)
+    if (CAN0.readMsgBuf((uint32_t *)&rxId, &len, rxBuf))
+    {
+#else
+    if (!hwDigitalRead(CAN_INT)) // If CAN_INT pin is low, read receive buffer
+    {
+        CAN0.readMsgBuf(&rxId, &len, rxBuf); // Read data: len = data length, buf = data byte(s)
+#endif
         long unsigned int from = (rxId & 0x000000FF);
         // cppcheck-suppress unreadVariable
         long unsigned int to = (rxId & 0x0000FF00) >> 8;
