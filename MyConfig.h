@@ -362,6 +362,53 @@
 /** @}*/ // End of RS485SettingGrpPub group
 
 /**
+ * @def MY_CAN
+ * @brief Define this to use the CAN wired transport for sensor network communication.
+ */
+//#define MY_CAN
+/**
+ * @def MY_DEBUG_VERBOSE_CAN
+ * @brief Define this for verbose debug prints related to the %CAN driver.
+ */
+//#define MY_DEBUG_VERBOSE_CAN
+/**
+ * @def CAN_INT
+ * @brief Message arrived interrupt pin.
+ */
+#ifndef CAN_INT
+#define CAN_INT (2u)
+#endif
+/**
+ * @def CAN_CS
+ * @brief Chip select pin.
+ */
+#ifndef CAN_CS
+#define CAN_CS (10u)
+#endif
+/**
+ * @def CAN_SPEED
+ * @brief Baud rate. Allowed values can be found in mcp_can_dfs.h
+ */
+#ifndef CAN_SPEED
+#define CAN_SPEED CAN_250KBPS
+#endif
+/**
+ * @def CAN_CLOCK
+ * @brief can clock. Allowed values can be found in mcp_can_dfs.h
+ */
+#ifndef CAN_CLOCK
+#define CAN_CLOCK MCP_8MHZ
+#endif
+/**
+ * @def CAN_BUF_SIZE
+ * @brief assemble buffer size. Since long messages can be sliced and arrive mixed with other messages, assemble buffer is required.
+ */
+#ifndef CAN_BUF_SIZE
+#define CAN_BUF_SIZE (8u)
+#endif
+
+
+/**
  * @defgroup RF24SettingGrpPub RF24
  * @ingroup TransportSettingGrpPub
  * @brief These options are specific to the RF24 family of wireless transport modules.
