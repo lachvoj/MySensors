@@ -17,75 +17,6 @@ STM32FxCAN::STM32FxCAN(uint8_t canDevice)
 }
 
 /**
- * Encodes CAN messages using the CAN message struct and populates the
- * data registers with the sent.
- *
- * @params CAN_tx_msg - CAN message structure for transmission
- *
- */
-uint8_t STM32FxCAN::send(CAN_msg_t *CAN_tx_msg)
-{
-    // get free mailbox
-    uint8_t mbIdx = 0;
-    volatile int count = 0;
-    while (true)
-    {
-        // any of mailboxes becomes empty while loop
-        if (count >= 1000000)
-            return CAN_FAILTX;
-        count++;
-
-        uint8_t tme = ((_canDev->TSR & 0x1C000000UL) >> 26);
-        if ((tme & 0x01U) == 1)
-        {
-            mbIdx = 0;
-            break;
-        }
-        if ((tme & 0x02U) == 2)
-        {
-            mbIdx = 1;
-            break;
-        }
-        if ((tme & 0x04U) == 4)
-        {
-            mbIdx = 2;
-            break;
-        }
-    }
-
-    uint32_t out = 0;
-    if (CAN_tx_msg->format == EXTENDED_FORMAT)
-    { // Extended frame format
-        out = ((CAN_tx_msg->id & CAN_EXT_ID_MASK) << 3U) | STM32_CAN_TIR_IDE;
-    }
-    else
-    { // Standard frame format
-        out = ((CAN_tx_msg->id & CAN_STD_ID_MASK) << 21U);
-    }
-
-    // Remote frame
-    if (CAN_tx_msg->type == REMOTE_FRAME)
-    {
-        out |= STM32_CAN_TIR_RTR;
-    }
-
-    _canDev->sTxMailBox[mbIdx].TDTR &= ~(0xF);
-    _canDev->sTxMailBox[mbIdx].TDTR |= CAN_tx_msg->len & 0xFUL;
-
-    _canDev->sTxMailBox[mbIdx].TDLR =
-        (((uint32_t)CAN_tx_msg->data[3] << 24) | ((uint32_t)CAN_tx_msg->data[2] << 16) |
-         ((uint32_t)CAN_tx_msg->data[1] << 8) | ((uint32_t)CAN_tx_msg->data[0]));
-    _canDev->sTxMailBox[mbIdx].TDHR =
-        (((uint32_t)CAN_tx_msg->data[7] << 24) | ((uint32_t)CAN_tx_msg->data[6] << 16) |
-         ((uint32_t)CAN_tx_msg->data[5] << 8) | ((uint32_t)CAN_tx_msg->data[4]));
-
-    // Send Go
-    _canDev->sTxMailBox[mbIdx].TIR = out | STM32_CAN_TIR_TXRQ;
-
-    return CAN_OK;
-}
-
-/**
  * Initializes the CAN filter registers.
  *
  * @preconditions   - This register can be written only when the filter initialization mode is set (FINIT=1) in the
@@ -319,12 +250,12 @@ uint8_t STM32FxCAN::begin(uint8_t idmodeset, uint8_t speedset, uint8_t clockset)
 
 uint8_t STM32FxCAN::setFilterMask32(uint8_t index, uint32_t filter, uint32_t mask, uint8_t fifo)
 {
-    return setFilter(index, 1, 0, fifo, (filter << 3) | 4, (mask << 3) | 4);
+    return setFilter(index, 1, 0, fifo, (filter << 3U), (mask << 3U));
 }
 
 uint8_t STM32FxCAN::setFilterList32(uint8_t index, uint32_t filter1, uint32_t filter2, uint8_t fifo)
 {
-    return setFilter(index, 1, 1, fifo, (filter1 << 3) | 4, (filter2 << 3) | 4);
+    return setFilter(index, 1, 1, fifo, (filter1 << 3U), (filter2 << 3U));
 }
 
 uint8_t STM32FxCAN::setFilterMask16(
@@ -360,43 +291,72 @@ uint8_t STM32FxCAN::setMode(uint8_t opMode)
     return 0;
 }
 
-uint8_t STM32FxCAN::sendMsgBuf(uint32_t id, uint8_t ext, uint8_t len, uint8_t *buf)
+uint8_t STM32FxCAN::sendMsgBuf(uint32_t id, uint8_t ext, uint8_t len, const uint8_t *buf)
 {
-    if (!isInitialized())
+    if (!isInitialized() || len > CAN_MAX_CHAR_IN_MESSAGE)
+    {
         return CAN_FAILINIT;
+    }
 
-    CAN_msg_t CAN_tx_msg;
-    CAN_tx_msg.id = id;
-    CAN_tx_msg.format = (ext == 0) ? STANDARD_FORMAT : EXTENDED_FORMAT;
+    // get free mailbox
+    uint8_t mbIdx = 0;
+    volatile int count = 0;
+    while (true)
+    {
+        // any of mailboxes becomes empty while loop
+        if (count >= 1000000)
+            return CAN_FAILTX;
+        count++;
+
+        uint8_t tme = ((_canDev->TSR & 0x1C000000UL) >> 26);
+        if ((tme & 0x01U) == 1)
+        {
+            mbIdx = 0;
+            break;
+        }
+        if ((tme & 0x02U) == 2)
+        {
+            mbIdx = 1;
+            break;
+        }
+        if ((tme & 0x04U) == 4)
+        {
+            mbIdx = 2;
+            break;
+        }
+    }
+
+    uint32_t out = 0;
+    if (ext != 0)
+    { // Extended frame format
+        out = ((id & CAN_EXT_ID_MASK) << 3U) | STM32_CAN_TIR_IDE;
+    }
+    else
+    { // Standard frame format
+        out = ((id & CAN_STD_ID_MASK) << 21U);
+    }
+
+    // Remote frame
     if (len == 0)
     {
-        CAN_tx_msg.type = REMOTE_FRAME;
-        return send(&CAN_tx_msg);
-    }
-    CAN_tx_msg.type = DATA_FRAME;
-
-    if (len <= 8)
-    {
-        memcpy(CAN_tx_msg.data, buf, len);
-        return send(&CAN_tx_msg);
+        out |= STM32_CAN_TIR_RTR;
     }
 
-    uint8_t noOfFrames = len / 8;
-    if (len % 8 != 0)
-        noOfFrames++;
+    _canDev->sTxMailBox[mbIdx].TDTR &= ~(0xF);
+    _canDev->sTxMailBox[mbIdx].TDTR |= len & 0xFUL;
 
-    for (uint8_t currentFrame = 0; currentFrame < noOfFrames; ++currentFrame)
-    {
-        CAN_tx_msg.len = (currentFrame * 8 <= len) ? 8 : len % 8;
-        memcpy(CAN_tx_msg.data, buf + (currentFrame * 8), CAN_tx_msg.len);
-        if (send(&CAN_tx_msg) != CAN_OK)
-            return CAN_FAILTX;
-    }
+    _canDev->sTxMailBox[mbIdx].TDLR =
+        (((uint32_t)buf[3] << 24) | ((uint32_t)buf[2] << 16) | ((uint32_t)buf[1] << 8) | ((uint32_t)buf[0]));
+    _canDev->sTxMailBox[mbIdx].TDHR =
+        (((uint32_t)buf[7] << 24) | ((uint32_t)buf[6] << 16) | ((uint32_t)buf[5] << 8) | ((uint32_t)buf[4]));
+
+    // Send Go
+    _canDev->sTxMailBox[mbIdx].TIR = out | STM32_CAN_TIR_TXRQ;
 
     return CAN_OK;
 }
 
-uint8_t STM32FxCAN::sendMsgBuf(uint32_t id, uint8_t len, uint8_t *buf)
+uint8_t STM32FxCAN::sendMsgBuf(uint32_t id, uint8_t len, const uint8_t *buf)
 {
     uint8_t ext = 0;
     if ((id & CAN_IS_EXTENDED) == CAN_IS_EXTENDED)
@@ -419,14 +379,6 @@ uint8_t STM32FxCAN::readMsgBuf(uint32_t *id, uint8_t *ext, uint8_t *len, uint8_t
     *len = (_canDev->sFIFOMailBox[0].RDTR) & 0xFUL;
     ((uint32_t *)buf)[0] = _canDev->sFIFOMailBox[0].RDLR;
     ((uint32_t *)buf)[1] = _canDev->sFIFOMailBox[0].RDHR;
-    // buf[0] = 0xFFUL & _canDev->sFIFOMailBox[0].RDLR;
-    // buf[1] = 0xFFUL & (_canDev->sFIFOMailBox[0].RDLR >> 8);
-    // buf[2] = 0xFFUL & (_canDev->sFIFOMailBox[0].RDLR >> 16);
-    // buf[3] = 0xFFUL & (_canDev->sFIFOMailBox[0].RDLR >> 24);
-    // buf[4] = 0xFFUL & _canDev->sFIFOMailBox[0].RDHR;
-    // buf[5] = 0xFFUL & (_canDev->sFIFOMailBox[0].RDHR >> 8);
-    // buf[6] = 0xFFUL & (_canDev->sFIFOMailBox[0].RDHR >> 16);
-    // buf[7] = 0xFFUL & (_canDev->sFIFOMailBox[0].RDHR >> 24);
 
     // Release FIFO 0 output mailbox.
     // Make the next incoming message available.

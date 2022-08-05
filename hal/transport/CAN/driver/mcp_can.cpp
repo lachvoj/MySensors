@@ -49,8 +49,6 @@ void MCP_CAN::mcp2515_reset(void)
 *********************************************************************************************************/
 INT8U MCP_CAN::mcp2515_readRegister(const INT8U address)                                                                     
 {
-    INT8U ret;
-
     MCP_SPI.beginTransaction(SPISettings());
     MCP2515_SELECT();
     char buf[3] = {MCP_READ, address, 0x00};
@@ -67,7 +65,6 @@ INT8U MCP_CAN::mcp2515_readRegister(const INT8U address)
 *********************************************************************************************************/
 void MCP_CAN::mcp2515_readRegisterS(const INT8U address, INT8U values[], const INT8U n)
 {
-    INT8U i;
     char buf[130];
     memset(buf, 0, 130);
     buf[0] = MCP_READ;
@@ -103,7 +100,6 @@ void MCP_CAN::mcp2515_setRegister(const INT8U address, const INT8U value)
 *********************************************************************************************************/
 void MCP_CAN::mcp2515_setRegisterS(const INT8U address, const INT8U values[], const INT8U n)
 {
-    INT8U i;
     char buf[130];
     buf[0] = MCP_WRITE;
     buf[1] = address;
@@ -1061,14 +1057,14 @@ INT8U MCP_CAN::init_Filt(INT8U num, INT32U ulData)
 ** Function name:           setMsg
 ** Descriptions:            Set can message, such as dlc, id, dta[] and so on
 *********************************************************************************************************/
-INT8U MCP_CAN::setMsg(INT32U id, INT8U rtr, INT8U ext, INT8U len, INT8U *pData)
+INT8U MCP_CAN::setMsg(INT32U id, INT8U rtr, INT8U ext, INT8U len, const INT8U *pData)
 {
     int i = 0;
     m_nID     = id;
     m_nRtr    = rtr;
     m_nExtFlg = ext;
     m_nDlc    = len;
-    for(i = 0; i<MAX_CHAR_IN_MESSAGE; i++)
+    for(i = 0; i<CAN_MAX_CHAR_IN_MESSAGE; i++)
         m_nDta[i] = *(pData+i);
 	
     return MCP2515_OK;
@@ -1130,7 +1126,7 @@ INT8U MCP_CAN::sendMsg()
 ** Function name:           sendMsgBuf
 ** Descriptions:            Send message to transmitt buffer
 *********************************************************************************************************/
-INT8U MCP_CAN::sendMsgBuf(INT32U id, INT8U ext, INT8U len, INT8U *buf)
+INT8U MCP_CAN::sendMsgBuf(INT32U id, INT8U ext, INT8U len, const INT8U *buf)
 {
     INT8U res;
 	
@@ -1144,7 +1140,7 @@ INT8U MCP_CAN::sendMsgBuf(INT32U id, INT8U ext, INT8U len, INT8U *buf)
 ** Function name:           sendMsgBuf
 ** Descriptions:            Send message to transmitt buffer
 *********************************************************************************************************/
-INT8U MCP_CAN::sendMsgBuf(INT32U id, INT8U len, INT8U *buf)
+INT8U MCP_CAN::sendMsgBuf(INT32U id, INT8U len, const INT8U *buf)
 {
     INT8U ext = 0, rtr = 0;
     INT8U res;

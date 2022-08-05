@@ -268,54 +268,6 @@
 //#define MY_RS485
 
 /**
- * @def MY_CAN
- * @brief Define this to use the CAN wired transport for sensor network communication.
- */
-//#define MY_CAN
-#if defined(MY_CAN)
-/**
- * @def MY_DEBUG_VERBOSE_CAN
- * @brief Define this for verbose debug prints related to the %CAN driver.
- */
-//#define MY_DEBUG_VERBOSE_CAN
-/**
- * @def CAN_INT
- * @brief Message arrived interrupt pin.
- */
-#ifndef CAN_INT
-#define CAN_INT (11u)
-#endif
-/**
- * @def CAN_CS
- * @brief Chip select pin.
- */
-#ifndef CAN_CS
-#define CAN_CS (10u)
-#endif
-/**
- * @def CAN_SPEED
- * @brief Baud rate. Allowed values can be found in mcp_can_dfs.h
- */
-#ifndef CAN_SPEED
-#define CAN_SPEED CAN_250KBPS
-#endif
-/**
- * @def CAN_CLOCK
- * @brief can clock. Allowed values can be found in mcp_can_dfs.h
- */
-#ifndef CAN_CLOCK
-#define CAN_CLOCK MCP_8MHZ
-#endif
-/**
- * @def CAN_BUF_SIZE
- * @brief assemble buffer size. Since long messages can be sliced and arrive mixed with other messages, assemble buffer is required.
- */
-#ifndef CAN_BUF_SIZE
-#define CAN_BUF_SIZE (8u)
-#endif
-#endif
-
-/**
  * @def MY_RS485_BAUD_RATE
  * @brief The RS485 BAUD rate.
  */
@@ -339,7 +291,6 @@
 #define MY_RS485_SOH_COUNT (1)
 #endif
 
-
 /**
  * @def MY_RS485_DE_PIN
  * @brief RS485 driver enable pin.
@@ -361,6 +312,7 @@
 //#define MY_RS485_HWSERIAL (Serial1)
 /** @}*/ // End of RS485SettingGrpPub group
 
+
 /**
  * @def MY_CAN
  * @brief Define this to use the CAN wired transport for sensor network communication.
@@ -372,41 +324,97 @@
  */
 //#define MY_DEBUG_VERBOSE_CAN
 /**
- * @def CAN_INT
+ * @def MY_CAN_INT
  * @brief Message arrived interrupt pin.
  */
-#ifndef CAN_INT
-#define CAN_INT (2u)
+#ifndef MY_CAN_INT
+#define MY_CAN_INT (11u)
 #endif
 /**
- * @def CAN_CS
+ * @def MY_CAN_CS
  * @brief Chip select pin.
  */
-#ifndef CAN_CS
-#define CAN_CS (10u)
+#ifndef MY_CAN_CS
+#define MY_CAN_CS (24u)
 #endif
 /**
- * @def CAN_SPEED
+ * @def MY_CAN_SPEED
  * @brief Baud rate. Allowed values can be found in mcp_can_dfs.h
  */
-#ifndef CAN_SPEED
-#define CAN_SPEED CAN_250KBPS
+#ifndef MY_CAN_SPEED
+#define MY_CAN_SPEED CAN_250KBPS
 #endif
 /**
- * @def CAN_CLOCK
+ * @def MY_CAN_CLOCK
  * @brief can clock. Allowed values can be found in mcp_can_dfs.h
  */
-#ifndef CAN_CLOCK
-#define CAN_CLOCK MCP_8MHZ
+#ifndef MY_CAN_CLOCK
+#define MY_CAN_CLOCK MCP_8MHZ
 #endif
 /**
- * @def CAN_BUF_SIZE
- * @brief assemble buffer size. Since long messages can be sliced and arrive mixed with other messages, assemble buffer is required.
+ * @def MY_CAN_MAX_MSG_ID_SEND_DELAY_MS
+ * @brief define this if wait defined amout of time to give time for receiver to process sent messages
+ * because otherwise it will get new messages with same message ID which could lead to rewriting messages.
  */
-#ifndef CAN_BUF_SIZE
-#define CAN_BUF_SIZE (8u)
+// #define MY_CAN_MAX_MSG_ID_SEND_DELAY_MS 1000
+/**
+ * @def MY_CAN_BUF_SIZE
+ * @brief assemble buffer size. Since long messages can be sliced and arrive mixed with other messages, assemble buffer
+ * is required. For gateway suggested size is at least as count of connected sensors.
+ */
+#ifndef MY_CAN_BUF_SIZE
+#define MY_CAN_BUF_SIZE (8u)
 #endif
-
+/**
+ * @def MY_CAN_TWO_STAGE_ASSEMBLY_BUF
+ * @brief second assemble buffer will be allowed for can. Second statage is implemented as linked list and it will take
+ * place if first stage is full. It is dynamically allocated and thus slower but it can take care of large bulk of
+ * incomming messages.
+ */
+//#define MY_CAN_TWO_STAGE_ASSEMBLY_BUF
+/**
+ * @def MY_CAN_SLOT_MAX_AGE_MS
+ * @brief maximum age of valid slot (ms).
+ */
+#ifndef MY_CAN_SLOT_MAX_AGE_MS
+#define MY_CAN_SLOT_MAX_AGE_MS 10000
+#endif
+/**
+ * @def MY_CAN_LINUX_CANDEV
+ * @brief define this if you want to use linux can device.
+ */
+//#define MY_CAN_LINUX_CANDEV
+#if defined(__linux__) && defined(MY_CAN_LINUX_CANDEV)
+/**
+ * @def MY_CAN_LINUX_CANDEV_DEVICE
+ * @brief if linux can device is used define device name.
+ */
+#ifndef MY_CAN_LINUX_CANDEV_DEVICE
+#define MY_CAN_LINUX_CANDEV_DEVICE_STR_VALUE(arg) #arg
+#define MY_CAN_LINUX_CANDEV_DEVICE MY_CAN_LINUX_CANDEV_DEVICE_STR_VALUE(can0)
+#endif
+/**
+ * @def MY_CAN_CANDEV_ASYNC
+ * @brief define this if you want to use linux can device in async mode.
+ */
+#if defined(MY_CAN_CANDEV_ASYNC) && !defined(MY_CAN_CANDEV_RB)
+#define MY_CAN_CANDEV_RB
+#endif
+/**
+ * @def MY_CAN_CANDEV_RB
+ * @brief define this if you want to use async ring buffer on top of linux can device socket.
+ */
+// #define MY_CAN_CANDEV_RB
+#ifdef MY_CAN_CANDEV_RB
+/**
+ * @def MY_CAN_CANDEV_RB_SZ
+ * @brief size of async ring buffer.
+ */
+#ifndef MY_CAN_CANDEV_RB_SZ
+#define MY_CAN_CANDEV_RB_SZ (MY_CAN_BUF_SIZE * 4)
+#endif
+#endif
+#endif
 
 /**
  * @defgroup RF24SettingGrpPub RF24
