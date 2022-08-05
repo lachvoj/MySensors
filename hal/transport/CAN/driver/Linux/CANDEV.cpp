@@ -6,17 +6,13 @@
 #include <signal.h>
 #include <sys/file.h>
 #include <sys/ioctl.h>
+#include <sys/syscall.h>
 #include <unistd.h>
 
 #include "CANDEV.h"
 
 // WARNING: will work only for one can if
 // TODO: expand to more can interfaces
-
-#ifndef MY_CAN_CANDEV_RB_SZ
-#define MY_CAN_CANDEV_RB_SZ (CAN_BUF_SIZE * (MAX_MESSAGE_SIZE / CAN_MAX_CHAR_IN_MESSAGE)) * 100
-#endif
-
 static int _s;
 
 #ifdef MY_CAN_CANDEV_RB
@@ -29,22 +25,46 @@ typedef struct
 
 static CANDEV_RingBuffer_t rxRb;
 
-void irqHandle(int val)
+inline static void _readDataToRb()
 {
-    ssize_t nbytes;
-    while (nbytes = read(_s, rxRb.wrPt, sizeof(can_frame)) > 0)
+    static const can_frame *rxRbLastElem = ((can_frame *)(&rxRb.frames + 1) - 1);
+    while (true)
     {
-        rxRb.wrPt++;
-        if (rxRb.wrPt == rxRb.rdPt)
-        {
-            // Drop newest message
-            rxRb.wrPt--;
-        }
-        if (rxRb.wrPt > ((can_frame *)(&rxRb.frames + 1) - 1))
+        can_frame *nextWrPt = rxRb.wrPt + 1;
+        // dont't read if next message will overwrite rdPt
+        if (nextWrPt == rxRb.rdPt || (nextWrPt > rxRbLastElem && rxRb.rdPt == rxRb.frames))
+            return;
+
+        ssize_t nbytes = read(_s, rxRb.wrPt, sizeof(can_frame));
+        if (nbytes < 1)
+            return;
+
+        rxRb.wrPt = nextWrPt;
+        if (rxRb.wrPt > rxRbLastElem)
         {
             rxRb.wrPt = rxRb.frames;
         }
     }
+}
+
+inline static void _cleanRb()
+{
+    rxRb.rdPt = rxRb.frames;
+    rxRb.wrPt = rxRb.frames;
+}
+#endif
+
+#ifdef MY_CAN_CANDEV_ASYNC
+// void _sigactionHandler(int val, siginfo_t *sigInfo, void *context)
+// {
+//     if (sigInfo->si_code != POLL_IN &&  sigInfo->si_code != POLL_MSG)
+//         return;
+
+//     _readDataToRb();
+// }
+inline static void _sigactionHandler(int val)
+{
+    _readDataToRb();
 }
 #endif
 
@@ -53,56 +73,63 @@ CANDEVClass::CANDEVClass(char *canDevice)
     strcpy(_canDevice, canDevice);
 }
 
+CANDEVClass::~CANDEVClass()
+{
+    close(_s);
+}
+
 uint8_t CANDEVClass::begin(uint8_t idmodeset, uint8_t speedset, uint8_t clockset)
 {
-    struct ifreq ifr;
-    struct sockaddr_can addr;
-
     _s = socket(PF_CAN, SOCK_RAW, CAN_RAW);
     if (_s < 0)
         return CAN_FAILINIT;
-
-    strcpy(ifr.ifr_name, _canDevice);
-    if (ioctl(_s, SIOCGIFINDEX, &ifr) < 0)
-        return CAN_FAILINIT;
-
-    // int opt = 1;
-    // if (ioctl(_s, FIONBIO, &opt))
-    //     return CAN_FAILINIT;
 
     int fileFlags = fcntl(_s, F_GETFL, 0);
     if (fileFlags < 0)
         return CAN_FAILINIT;
 
-    if (fcntl(_s, F_SETFL, fileFlags | O_NONBLOCK) < 0)
+#ifdef MY_CAN_CANDEV_ASYNC
+    // struct sigaction act;
+    // memset(&act, 0, sizeof(act));
+    // if (sigfillset(&act.sa_mask) < 0)
+    //     return CAN_FAILINIT;
+
+    // act.sa_flags = SA_SIGINFO;
+    // act.sa_sigaction = _sigactionHandler;
+    // if (sigaction(SIGIO, &act, NULL) < 0)
+    //     return CAN_FAILINIT;
+
+    if (signal(SIGIO, _sigactionHandler))
         return CAN_FAILINIT;
 
-    addr.can_family = AF_CAN;
-    addr.can_ifindex = ifr.ifr_ifindex;
+    if (fcntl(_s, F_SETOWN, getpid()) < 0)
+        return CAN_FAILINIT;
 
-    if (bind(_s, (struct sockaddr *)&addr, sizeof(addr)) < 0)
+    fileFlags |= O_ASYNC;
+#endif
+#ifdef MY_CAN_CANDEV_RB
+    _cleanRb();
+#endif
+
+    if (fcntl(_s, F_SETFL, fileFlags | O_NONBLOCK) < 0)
         return CAN_FAILINIT;
 
     int loopback = 0;
     if (setsockopt(_s, SOL_CAN_RAW, CAN_RAW_LOOPBACK, &loopback, sizeof(loopback)) < 0)
         return CAN_FAILINIT;
 
+    struct ifreq ifr;
+    strcpy(ifr.ifr_name, _canDevice);
+    if (ioctl(_s, SIOCGIFINDEX, &ifr) < 0)
+        return CAN_FAILINIT;
+
+    struct sockaddr_can addr;
+    addr.can_family = AF_CAN;
+    addr.can_ifindex = ifr.ifr_ifindex;
+    if (bind(_s, (struct sockaddr *)&addr, sizeof(addr)) < 0)
+        return CAN_FAILINIT;
+
     _initialized = true;
-
-#ifdef MY_CAN_CANDEV_RB
-    if (signal(SIGIO, irqHandle) == SIG_ERR)
-        return CAN_FAILINIT;
-
-    if (fcntl(_s, F_SETOWN, getpid()) < 0)
-        return CAN_FAILINIT;
-
-    fileFlags = fcntl(_s, F_GETFL, 0);
-    if (fileFlags < 0)
-        return CAN_FAILINIT;
-
-    if (fcntl(_s, F_SETFL, fileFlags | FNDELAY | FASYNC) < 0)
-        return CAN_FAILINIT;
-#endif
 
     return CAN_OK;
 }
@@ -118,7 +145,7 @@ uint8_t CANDEVClass::setFilterMask(can_filter *filters, uint8_t count)
     return ret;
 }
 
-uint8_t CANDEVClass::sendMsgBuf(uint32_t id, uint8_t ext, uint8_t len, uint8_t *buf)
+uint8_t CANDEVClass::sendMsgBuf(uint32_t id, uint8_t ext, uint8_t len, const uint8_t *buf)
 {
     if (!_initialized)
         return CAN_FAILINIT;
@@ -148,7 +175,7 @@ uint8_t CANDEVClass::sendMsgBuf(uint32_t id, uint8_t ext, uint8_t len, uint8_t *
     return CAN_OK;
 }
 
-uint8_t CANDEVClass::sendMsgBuf(uint32_t id, uint8_t len, uint8_t *buf)
+uint8_t CANDEVClass::sendMsgBuf(uint32_t id, uint8_t len, const uint8_t *buf)
 {
     uint8_t ext = 0;
     if ((id & CAN_IS_EXTENDED) == CAN_IS_EXTENDED)
@@ -165,6 +192,9 @@ uint8_t CANDEVClass::readMsgBuf(uint32_t *id, uint8_t *ext, uint8_t *len, uint8_
     struct can_frame *CAN_rx_msg;
 
 #ifdef MY_CAN_CANDEV_RB
+#ifndef MY_CAN_CANDEV_ASYNC
+    _readDataToRb();
+#endif
     if (rxRb.rdPt == rxRb.wrPt)
         return 0;
 

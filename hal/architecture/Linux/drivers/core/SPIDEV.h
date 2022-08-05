@@ -34,6 +34,8 @@
 
 // #define SPI_CLOCK_BASE 10000000		// 10Mhz
 #define SPI_CLOCK_BASE 5000000		// 5Mhz
+// #define SPI_CLOCK_BASE 1000000		// 1Mhz
+// #define SPI_CLOCK_BASE 500000			// 5khz
 
 #define SPI_CLOCK_DIV1 1
 #define SPI_CLOCK_DIV2 2

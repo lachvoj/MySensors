@@ -16,37 +16,13 @@
 class STM32FxCAN
 {
   private:
-    /* Symbolic names for formats of CAN message                                 */
-    typedef enum
-    {
-        STANDARD_FORMAT = 0,
-        EXTENDED_FORMAT
-    } CAN_FORMAT;
-
-    /* Symbolic names for type of CAN message                                    */
-    typedef enum
-    {
-        DATA_FRAME = 0,
-        REMOTE_FRAME
-    } CAN_FRAME;
-
-    typedef struct
-    {
-        uint32_t id;     /* 29 bit identifier                               */
-        uint8_t data[8]; /* Data field                                      */
-        uint8_t len;     /* Length of data field in bytes                   */
-        uint8_t ch;      /* Object channel(Not use)                         */
-        uint8_t format;  /* 0 - STANDARD, 1- EXTENDED IDENTIFIER            */
-        uint8_t type;    /* 0 - DATA FRAME, 1 - REMOTE FRAME                */
-    } CAN_msg_t;
-
     bool _initialized = false;
     uint8_t _speed;
     CAN_TypeDef *_canDev;
 
     bool isInitialized();
-    uint8_t send(CAN_msg_t *CAN_tx_msg);
     uint8_t setFilter(uint8_t index, uint8_t scale, uint8_t mode, uint8_t fifo, uint32_t bank1, uint32_t bank2);
+    uint8_t sendMsg(uint32_t id, uint8_t ext, uint8_t len, uint8_t *buf);
 
   public:
     STM32FxCAN(uint8_t canDevice = 1);
@@ -67,21 +43,21 @@ class STM32FxCAN
         uint16_t filter3,
         uint16_t filter4,
         uint8_t fifo = 0);
-    uint8_t setMode(uint8_t opMode);                                            // Set operational mode
-    uint8_t sendMsgBuf(uint32_t id, uint8_t ext, uint8_t len, uint8_t *buf);    // Send message to transmit buffer
-    uint8_t sendMsgBuf(uint32_t id, uint8_t len, uint8_t *buf);                 // Send message to transmit buffer
-    uint8_t readMsgBuf(uint32_t *id, uint8_t *ext, uint8_t *len, uint8_t *buf); // Read message from receive buffer
-    uint8_t readMsgBuf(uint32_t *id, uint8_t *len, uint8_t *buf);               // Read message from receive buffer
-    uint8_t checkReceive(void);                                                 // Check for received data
-    uint8_t checkError(void);                                                   // Check for errors
-    uint8_t getError(void);                                                     // Check for errors
-    uint8_t errorCountRX(void);                                                 // Get error count
-    uint8_t errorCountTX(void);                                                 // Get error count
-    uint8_t enOneShotTX(void);                                                  // Enable one-shot transmission
-    uint8_t disOneShotTX(void);                                                 // Disable one-shot transmission
-    uint8_t abortTX(void);                                                      // Abort queued transmission(s)
-    uint8_t setGPO(uint8_t data);                                               // Sets GPO
-    uint8_t getGPI(void);                                                       // Reads GPI
+    uint8_t setMode(uint8_t opMode);                                               // Set operational mode
+    uint8_t sendMsgBuf(uint32_t id, uint8_t ext, uint8_t len, const uint8_t *buf); // Send message to transmit buffer
+    uint8_t sendMsgBuf(uint32_t id, uint8_t len, const uint8_t *buf);              // Send message to transmit buffer
+    uint8_t readMsgBuf(uint32_t *id, uint8_t *ext, uint8_t *len, uint8_t *buf);    // Read message from receive buffer
+    uint8_t readMsgBuf(uint32_t *id, uint8_t *len, uint8_t *buf);                  // Read message from receive buffer
+    uint8_t checkReceive(void);                                                    // Check for received data
+    uint8_t checkError(void);                                                      // Check for errors
+    uint8_t getError(void);                                                        // Check for errors
+    uint8_t errorCountRX(void);                                                    // Get error count
+    uint8_t errorCountTX(void);                                                    // Get error count
+    uint8_t enOneShotTX(void);                                                     // Enable one-shot transmission
+    uint8_t disOneShotTX(void);                                                    // Disable one-shot transmission
+    uint8_t abortTX(void);                                                         // Abort queued transmission(s)
+    uint8_t setGPO(uint8_t data);                                                  // Sets GPO
+    uint8_t getGPI(void);                                                          // Reads GPI
     uint8_t enableRxInterrupt(void);
     uint8_t disableRxInterrupt(void);
     uint8_t attachRxInterrupt(void func());
