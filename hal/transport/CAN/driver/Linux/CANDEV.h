@@ -10,7 +10,6 @@ class CANDEVClass
   private:
     bool _initialized = false;
     char _canDevice[10];
-    int _s;
 
   public:
     CANDEVClass(char *canDevice);
