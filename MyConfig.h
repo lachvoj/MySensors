@@ -366,13 +366,6 @@
 #define MY_CAN_BUF_SIZE (8u)
 #endif
 /**
- * @def MY_CAN_TWO_STAGE_ASSEMBLY_BUF
- * @brief second assemble buffer will be allowed for can. Second statage is implemented as linked list and it will take
- * place if first stage is full. It is dynamically allocated and thus slower but it can take care of large bulk of
- * incomming messages.
- */
-//#define MY_CAN_TWO_STAGE_ASSEMBLY_BUF
-/**
  * @def MY_CAN_SLOT_MAX_AGE_MS
  * @brief maximum age of valid slot (ms).
  */

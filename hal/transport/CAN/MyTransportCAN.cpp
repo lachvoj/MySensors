@@ -18,6 +18,10 @@ MCP_CAN CAN0(MY_CAN_CS);
 #define CAN_DEBUG(x, ...) //!< DEBUG null
 #endif
 
+#ifdef MY_CAN_MAX_MSG_ID_SEND_DELAY_MS
+#define MY_CAN_MAX_MSG_ID_SEND_DELAY_US MY_CAN_MAX_MSG_ID_SEND_DELAY_MS * 1000
+#endif
+
 bool canInitialized = false;
 
 // input buffer for raw data (from library).
@@ -33,23 +37,12 @@ typedef struct
     uint8_t totalFrames;
     bool locked;
     bool ready;
-    uint64_t timestamp;
+    uint32_t timestamp;
 } CAN_Slot_t;
 
 // assembly buffer
 static CAN_Slot_t canSlots[MY_CAN_BUF_SIZE];
-
-#ifdef MY_CAN_TWO_STAGE_ASSEMBLY_BUF
-// buffer element slow
-typedef struct CAN_Slot_ll_element
-{
-    CAN_Slot_t canSlot;
-    struct CAN_Slot_ll_element *prev;
-    struct CAN_Slot_ll_element *next;
-} CAN_Slot_ll_element_t;
-// assembly buffer second stage
-static CAN_Slot_ll_element_t *canSlotsLl;
-#endif
+static uint8_t freeCanSlots;
 
 #if defined(ARDUINO_ARCH_STM32F1) && !defined(MCP_CAN)
 bool _initFilters()
@@ -110,92 +103,11 @@ bool _initFilters()
 }
 #endif
 
-#ifdef MY_CAN_TWO_STAGE_ASSEMBLY_BUF
-static inline CAN_Slot_ll_element_t *_removeLlCanSlot(CAN_Slot_ll_element_t *llCanSlot)
-{
-    CAN_Slot_ll_element_t *ret = nullptr;
-    if (llCanSlot == nullptr)
-        return ret;
-
-    if (llCanSlot->prev != nullptr)
-    {
-        if (llCanSlot->next != nullptr)
-            llCanSlot->next->prev = llCanSlot->prev;
-
-        llCanSlot->prev->next = llCanSlot->next;
-        ret = llCanSlot->prev;
-    }
-    else
-    {
-        canSlotsLl = llCanSlot->next;
-        if (canSlotsLl != nullptr)
-            canSlotsLl->prev = nullptr;
-        ret = canSlotsLl;
-    }
-    free(llCanSlot);
-    CAN_DEBUG("CAN:RCV:SLOT:LL removed.\n");
-
-    return ret;
-}
-
-static inline CAN_Slot_t *_addLlCanSlot()
-{
-    CAN_Slot_ll_element_t *elem = (CAN_Slot_ll_element_t *)calloc(1, sizeof(CAN_Slot_ll_element_t));
-    if (elem == nullptr)
-        return nullptr;
-
-    if (canSlotsLl == nullptr)
-    {
-        elem->prev = nullptr;
-        elem->next = nullptr;
-        canSlotsLl = elem;
-    }
-    else
-    {
-        CAN_Slot_ll_element_t *current = canSlotsLl;
-        do
-        {
-            if (current->next == nullptr)
-            {
-                elem->prev = current;
-                elem->next = nullptr;
-                current->next = elem;
-                break;
-            }
-        } while ((current = current->next) != nullptr);
-    }
-    CAN_DEBUG("CAN:RCV:SLOT:LL added.\n");
-
-    return &elem->canSlot;
-}
-
-static inline CAN_Slot_ll_element_t *_findCanLlSlotBySlot(CAN_Slot_t *slot)
-{
-    if (slot == nullptr || canSlotsLl == nullptr)
-        return nullptr;
-
-    CAN_Slot_ll_element_t *current = canSlotsLl;
-    do
-    {
-        if (&current->canSlot == slot)
-        {
-            return current;
-        }
-    } while ((current = current->next) != nullptr);
-
-    return nullptr;
-}
-#endif
-
 // clear single slot in buffer.
 static inline void _cleanSlot(CAN_Slot_t *slot)
 {
     memset(slot, 0x0U, sizeof(CAN_Slot_t));
-
-#ifdef MY_CAN_TWO_STAGE_ASSEMBLY_BUF
-    if (slot < canSlots || (uint8_t *)slot > (((uint8_t *)canSlots) + sizeof(canSlots)))
-        _removeLlCanSlot(_findCanLlSlotBySlot(slot));
-#endif
+    freeCanSlots++;
 }
 
 // find empty slot in buffer
@@ -249,24 +161,6 @@ static inline CAN_Slot_t *_getOldestReadySlot()
         }
     }
 
-#ifdef MY_CAN_TWO_STAGE_ASSEMBLY_BUF
-    if (slot == nullptr && canSlotsLl == nullptr)
-        return slot;
-
-    if (slot == nullptr && canSlotsLl != nullptr)
-    {
-        CAN_Slot_ll_element_t *current = canSlotsLl;
-        do
-        {
-            if (current->canSlot.ready)
-            {
-                slot = &current->canSlot;
-                break;
-            }
-        } while ((current = current->next) != nullptr);
-    }
-#endif
-
     if (slot != nullptr)
     {
         for (i = 0; i < MY_CAN_BUF_SIZE; i++)
@@ -276,36 +170,17 @@ static inline CAN_Slot_t *_getOldestReadySlot()
                 slot = &canSlots[i];
             }
         }
-
-#ifdef MY_CAN_TWO_STAGE_ASSEMBLY_BUF
-        if (canSlotsLl == nullptr)
-            return slot;
-
-        CAN_Slot_ll_element_t *current = canSlotsLl;
-        do
-        {
-            if (_isFirstSlotOlder(&current->canSlot, slot))
-            {
-                slot = &current->canSlot;
-            }
-        } while ((current = current->next) != nullptr);
-#endif
     }
 
     return slot;
 }
 
-static inline bool _isTimedOut(const CAN_Slot_t *slot, const uint64_t *time)
-{
-    return (slot->locked && (*time - slot->timestamp) > MY_CAN_SLOT_MAX_AGE_MS);
-}
-
 inline void _removeTimedOutSlots()
 {
-    uint64_t time = (uint64_t)millis();
+    uint32_t time = (uint32_t)micros();
     for (uint8_t i = 0; i < MY_CAN_BUF_SIZE; i++)
     {
-        if (_isTimedOut(&canSlots[i], &time))
+        if (canSlots[i].locked && (time - canSlots[i].timestamp) > MY_CAN_SLOT_MAX_AGE_MS)
         {
             CAN_DEBUG(
                 PSTR("!CAN:RCV:SLOT=%" PRIu8 ":SEARCHID=%0x" PRIX32 " message dropped (max age)\n"),
@@ -314,22 +189,6 @@ inline void _removeTimedOutSlots()
             _cleanSlot(&canSlots[i]);
         }
     }
-
-#ifdef MY_CAN_TWO_STAGE_ASSEMBLY_BUF
-    if (canSlotsLl == nullptr)
-        return;
-
-    CAN_Slot_ll_element_t *current = canSlotsLl;
-    do
-    {
-        if (_isTimedOut(&current->canSlot, &time))
-        {
-            CAN_DEBUG(
-                PSTR("!CAN:RCV:SLOT:SEARCHID=%0x" PRIX32 " message dropped (max age)\n"), current->canSlot.searchId);
-            current = _removeLlCanSlot(current);
-        }
-    } while (current != nullptr && (current = current->next) != nullptr);
-#endif
 }
 
 // current part number 3 bits (C)
@@ -337,12 +196,6 @@ inline void _removeTimedOutSlots()
 // 10 bits message_id (E)
 // HIEE EEEE EEEE DCCC BBBB BBBB AAAA AAAA
 static const uint32_t findSlotMask = 0x1FF0FFFFU;
-static inline bool _isSlotForNextMsg(const uint32_t rxId, const uint8_t currentFrameMask, const CAN_Slot_t *canSlot)
-{
-    return (
-        canSlot->locked && !canSlot->ready && canSlot->searchId == (rxId & findSlotMask) &&
-        (canSlot->frameReceived & currentFrameMask) == 0);
-}
 
 // find slot with previous data parts.
 static inline CAN_Slot_t *_findCanSlot(const uint32_t rxId, const uint8_t currentFrameMask)
@@ -350,55 +203,24 @@ static inline CAN_Slot_t *_findCanSlot(const uint32_t rxId, const uint8_t curren
     CAN_Slot_t *slot = nullptr;
     for (uint8_t i = 0; i < MY_CAN_BUF_SIZE; i++)
     {
-        if (_isSlotForNextMsg(rxId, currentFrameMask, &canSlots[i]))
+        if (canSlots[i].locked && !canSlots[i].ready && canSlots[i].searchId == (rxId & findSlotMask) &&
+            (canSlots[i].frameReceived & currentFrameMask) == 0)
         {
             slot = &canSlots[i];
             break;
         }
     }
-    if (slot != nullptr)
-        return slot;
-
-#ifdef MY_CAN_TWO_STAGE_ASSEMBLY_BUF
-    if (canSlotsLl == nullptr)
-        return slot;
-
-    CAN_Slot_ll_element_t *current = canSlotsLl;
-    do
-    {
-        if (_isSlotForNextMsg(rxId, currentFrameMask, &(current->canSlot)))
-        {
-            slot = &(current->canSlot);
-            break;
-        }
-    } while ((current = current->next) != nullptr);
-
-#endif
 
     return slot;
 }
 
-inline bool _checkDataAvailable()
+static inline bool _checkDataAvailable()
 {
     for (uint8_t i = 0; i < MY_CAN_BUF_SIZE; i++)
     {
         if (canSlots[i].ready)
             return true;
     }
-
-#ifdef MY_CAN_TWO_STAGE_ASSEMBLY_BUF
-    if (canSlotsLl == nullptr)
-        return false;
-
-    CAN_Slot_ll_element_t *current = canSlotsLl;
-    do
-    {
-        if (current->canSlot.ready)
-        {
-            return true;
-        }
-    } while ((current = current->next) != nullptr);
-#endif
 
     return false;
 }
@@ -456,95 +278,6 @@ void _parseHeader(
     *messageId = (rxId & msgIdMask) >> 20;
 }
 
-inline void _getDataFromDriver()
-{
-    long unsigned int rxId;
-    uint8_t len = 0;
-    uint8_t rxBuf[CAN_MAX_CHAR_IN_MESSAGE];
-#if defined(ARDUINO_ARCH_STM32F1) && !defined(MCP_CAN)
-    while (CAN0.checkReceive())
-    {
-        CAN0.readMsgBuf(&rxId, &len, rxBuf); // Read data: len = data length, buf = data byte(s)
-#elif defined(__linux__) && defined(MY_CAN_LINUX_CANDEV)
-    while (CAN0.readMsgBuf((uint32_t *)&rxId, &len, rxBuf) > 0)
-    {
-#else
-    while (!hwDigitalRead(MY_CAN_INT)) // If MY_CAN_INT pin is low, read receive buffer
-    {
-        CAN0.readMsgBuf(&rxId, &len, rxBuf); // Read data: len = data length, buf = data byte(s)
-#endif
-        uint16_t messageId;
-        uint8_t currentFrame, to, from;
-        bool isLast;
-        _parseHeader(rxId, &messageId, &isLast, &currentFrame, &to, &from);
-        uint8_t currentFrameMask = 0x01U << currentFrame;
-        CAN_DEBUG(
-            PSTR("CAN:RCV:CANH=0X%" PRIX32 ",ID=%" PRIu8 ",ISLAST=%" PRIu8 ",CURR=%" PRIu8 ",TO=%" PRIu8 ",FROM=%" PRIu8
-                 "\n"),
-            rxId,
-            messageId,
-            isLast,
-            currentFrame,
-            to,
-            from);
-        CAN_DEBUG(
-            PSTR("CAN:RCV:LN=%" PRIu8 ",DTA0=%" PRIu8 ",DTA1=%" PRIu8 ",DTA2=%" PRIu8 ",DTA3=%" PRIu8 ",DTA4=%" PRIu8
-                 ",DTA5=%" PRIu8 ",DTA6=%" PRIu8 ",DTA7=%" PRIu8 "\n"),
-            len,
-            rxBuf[0],
-            rxBuf[1],
-            rxBuf[2],
-            rxBuf[3],
-            rxBuf[4],
-            rxBuf[5],
-            rxBuf[6],
-            rxBuf[7]);
-
-        CAN_Slot_t *slot = _findCanSlot(rxId, currentFrameMask);
-        if (slot == nullptr)
-        {
-            slot = _findEmptyCanSlot();
-            if (slot == nullptr)
-            {
-                _removeTimedOutSlots();
-                slot = _findEmptyCanSlot();
-#ifdef MY_CAN_TWO_STAGE_ASSEMBLY_BUF
-                if (slot == nullptr)
-                    slot = _addLlCanSlot();
-#endif
-                if (slot == nullptr)
-                {
-                    slot = _getOldestSlot();
-                    CAN_DEBUG(
-                        PSTR("!CAN:RCV:SLOT:FROM=%" PRIu8 ":MSGID=%" PRIu8 " message dropped (no space)\n"),
-                        from,
-                        messageId);
-                    _cleanSlot(slot);
-                }
-            }
-            slot->searchId = rxId & findSlotMask;
-            slot->locked = true;
-            slot->timestamp = (uint64_t)millis();
-        }
-        memcpy(slot->data + currentFrame * CAN_MAX_CHAR_IN_MESSAGE, rxBuf, len);
-        slot->len += len;
-        slot->frameReceived |= currentFrameMask;
-        if (isLast)
-            slot->totalFrames = currentFrame + 1;
-        CAN_DEBUG(
-            PSTR("CAN:RCV:SLOT:FROM=%" PRIu8 ":MSGID=%" PRIu8 ":PARTS=%" PRIX8 ":LEN=%" PRIu8 "\n"),
-            from,
-            messageId,
-            slot->frameReceived,
-            slot->len);
-        if (slot->totalFrames > 0 && (slot->frameReceived ^ ((1 << slot->totalFrames) - 1)) == 0)
-        {
-            slot->ready = true;
-            CAN_DEBUG(PSTR("CAN:RCV:SLOT:FROM=%" PRIu8 ":MSGID=%" PRIu8 " complete\n"), from, messageId);
-        }
-    }
-}
-
 bool CAN_transportInit(void)
 {
     CAN_DEBUG(
@@ -553,6 +286,8 @@ bool CAN_transportInit(void)
         MY_CAN_INT,
         MY_CAN_SPEED,
         MY_CAN_CLOCK);
+
+    freeCanSlots = MY_CAN_BUF_SIZE;
 
     if (CAN0.begin(MCP_STDEXT, MY_CAN_SPEED, MY_CAN_CLOCK) != CAN_OK)
     {
@@ -578,13 +313,13 @@ bool CAN_transportSend(const uint8_t to, const void *data, const uint8_t len, co
     static uint16_t message_id;
 
 #ifdef MY_CAN_MAX_MSG_ID_SEND_DELAY_MS
-    static uint64_t lastMsgSentTimeStamp;
+    static uint32_t lastMsgSentTimeStamp;
 
-    uint64_t tstDiff = ((uint64_t)millis() - lastMsgSentTimeStamp);
-    if (message_id == 0x01FF && tstDiff < MY_CAN_MAX_MSG_ID_SEND_DELAY_MS)
-        wait((uint32_t)(MY_CAN_MAX_MSG_ID_SEND_DELAY_MS - tstDiff));
+    uint32_t tstDiff = ((uint32_t)micros() - lastMsgSentTimeStamp);
+    if (message_id == 0x01FF && tstDiff < MY_CAN_MAX_MSG_ID_SEND_DELAY_US)
+        wait((uint32_t)(MY_CAN_MAX_MSG_ID_SEND_DELAY_US - tstDiff));
 
-    lastMsgSentTimeStamp = (uint64_t)millis();
+    lastMsgSentTimeStamp = (uint32_t)micros();
 #endif
 
     // update message_id
@@ -640,9 +375,100 @@ bool CAN_transportSend(const uint8_t to, const void *data, const uint8_t len, co
 
 bool CAN_transportDataAvailable(void)
 {
-    _getDataFromDriver();
+    bool ret = false;
 
-    return _checkDataAvailable();
+    long unsigned int rxId;
+    uint8_t len = 0;
+    uint8_t rxBuf[CAN_MAX_CHAR_IN_MESSAGE];
+#if defined(ARDUINO_ARCH_STM32F1) && !defined(MCP_CAN)
+    while (CAN0.checkReceive())
+    {
+        CAN0.readMsgBuf(&rxId, &len, rxBuf); // Read data: len = data length, buf = data byte(s)
+#elif defined(__linux__) && defined(MY_CAN_LINUX_CANDEV)
+    while (CAN0.readMsgBuf((uint32_t *)&rxId, &len, rxBuf) > 0)
+    {
+#else
+    while (!hwDigitalRead(MY_CAN_INT)) // If MY_CAN_INT pin is low, read receive buffer
+    {
+        CAN0.readMsgBuf(&rxId, &len, rxBuf); // Read data: len = data length, buf = data byte(s)
+#endif
+        uint16_t messageId;
+        uint8_t currentFrame, to, from;
+        bool isLast;
+        _parseHeader(rxId, &messageId, &isLast, &currentFrame, &to, &from);
+        uint8_t currentFrameMask = 0x01U << currentFrame;
+        CAN_DEBUG(
+            PSTR("CAN:RCV:CANH=0X%" PRIX32 ",ID=%" PRIu8 ",ISLAST=%" PRIu8 ",CURR=%" PRIu8 ",TO=%" PRIu8 ",FROM=%" PRIu8
+                 "\n"),
+            rxId,
+            messageId,
+            isLast,
+            currentFrame,
+            to,
+            from);
+        CAN_DEBUG(
+            PSTR("CAN:RCV:LN=%" PRIu8 ",DTA0=%" PRIu8 ",DTA1=%" PRIu8 ",DTA2=%" PRIu8 ",DTA3=%" PRIu8 ",DTA4=%" PRIu8
+                 ",DTA5=%" PRIu8 ",DTA6=%" PRIu8 ",DTA7=%" PRIu8 "\n"),
+            len,
+            rxBuf[0],
+            rxBuf[1],
+            rxBuf[2],
+            rxBuf[3],
+            rxBuf[4],
+            rxBuf[5],
+            rxBuf[6],
+            rxBuf[7]);
+
+        CAN_Slot_t *slot = _findCanSlot(rxId, currentFrameMask);
+        if (slot == nullptr)
+        {
+            slot = _findEmptyCanSlot();
+            if (slot == nullptr)
+            {
+                _removeTimedOutSlots();
+                slot = _findEmptyCanSlot();
+                if (slot == nullptr)
+                {
+                    slot = _getOldestSlot();
+                    CAN_DEBUG(
+                        PSTR("!CAN:RCV:SLOT:FROM=%" PRIu8 ":MSGID=%" PRIu8
+                             " message dropped (no space) !!!Increase MY_CAN_BUF_SIZE if you seeing this too "
+                             "often!!!\n"),
+                        from,
+                        messageId);
+                    _cleanSlot(slot);
+                }
+            }
+            freeCanSlots--;
+            slot->searchId = rxId & findSlotMask;
+            slot->locked = true;
+            slot->timestamp = (uint64_t)micros();
+        }
+        memcpy(slot->data + currentFrame * CAN_MAX_CHAR_IN_MESSAGE, rxBuf, len);
+        slot->len += len;
+        slot->frameReceived |= currentFrameMask;
+        if (isLast)
+            slot->totalFrames = currentFrame + 1;
+        CAN_DEBUG(
+            PSTR("CAN:RCV:SLOT:FROM=%" PRIu8 ":MSGID=%" PRIu8 ":PARTS=%" PRIX8 ":LEN=%" PRIu8 "\n"),
+            from,
+            messageId,
+            slot->frameReceived,
+            slot->len);
+        if (slot->totalFrames > 0 && (slot->frameReceived ^ ((1 << slot->totalFrames) - 1)) == 0)
+        {
+            slot->ready = true;
+            CAN_DEBUG(PSTR("CAN:RCV:SLOT:FROM=%" PRIu8 ":MSGID=%" PRIu8 " complete\n"), from, messageId);
+            ret = true;
+        }
+        if (freeCanSlots < 2 && _checkDataAvailable())
+        {
+            ret = true;
+            break;
+        }
+    }
+
+    return ret;
 }
 
 void CAN_transportTask(void)
@@ -664,19 +490,18 @@ void CAN_transportTask(void)
 uint8_t CAN_transportReceive(void *data, const uint8_t maxBufSize)
 {
     CAN_Slot_t *slot = _getOldestReadySlot();
-    if (slot != nullptr)
-    {
-        uint8_t len = slot->len;
 
-        memcpy(data, slot->data, len);
-        _cleanSlot(slot);
-
-        return len;
-    }
-    else
+    if (slot == nullptr)
     {
         return (0);
     }
+
+    uint8_t len = slot->len;
+
+    memcpy(data, slot->data, len);
+    _cleanSlot(slot);
+
+    return len;
 }
 
 void CAN_transportSetAddress(const uint8_t address)
