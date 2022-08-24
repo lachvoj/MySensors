@@ -22,6 +22,10 @@ MCP_CAN CAN0(MY_CAN_CS);
 #define MY_CAN_MAX_MSG_ID_SEND_DELAY_US MY_CAN_MAX_MSG_ID_SEND_DELAY_MS * 1000
 #endif
 
+#if (MAX_MESSAGE_SIZE > 32)
+#error MAX_MESSAGE_SIZE si more than 32 this component won't work.
+#endif
+
 bool canInitialized = false;
 
 // input buffer for raw data (from library).
@@ -31,10 +35,14 @@ uint8_t _nodeId;
 typedef struct
 {
     uint8_t data[MAX_MESSAGE_SIZE];
-    uint32_t searchId;
-    uint8_t len;
-    uint8_t frameReceived;
+    //search id bits 4-31 frameReceived 0-4
+    union
+    {
+        uint32_t searchId;
+        uint8_t frameReceived;
+    };
     uint8_t totalFrames;
+    uint8_t len;
     bool locked;
     bool ready;
     uint32_t timestamp;
@@ -43,6 +51,8 @@ typedef struct
 // assembly buffer
 static CAN_Slot_t canSlots[MY_CAN_BUF_SIZE];
 static uint8_t freeCanSlots;
+
+
 
 #if defined(ARDUINO_ARCH_STM32F1) && !defined(MCP_CAN)
 bool _initFilters()
@@ -140,14 +150,7 @@ static inline CAN_Slot_t *_getOldestSlot()
     return slot;
 }
 
-static const uint32_t msgIdMask = 0x1FF00000U;
-static inline bool _isFirstSlotOlder(const CAN_Slot_t *first, const CAN_Slot_t *second)
-{
-    return (
-        first->ready && (first->searchId & msgIdMask) < (second->searchId & msgIdMask) &&
-        first->timestamp > second->timestamp);
-}
-
+static const uint32_t msgIdMask = 0x00001FF0U;
 static inline CAN_Slot_t *_getOldestReadySlot()
 {
     CAN_Slot_t *slot = nullptr;
@@ -163,9 +166,10 @@ static inline CAN_Slot_t *_getOldestReadySlot()
 
     if (slot != nullptr)
     {
-        for (i = 0; i < MY_CAN_BUF_SIZE; i++)
+        for (i++; i < MY_CAN_BUF_SIZE; i++)
         {
-            if (_isFirstSlotOlder(&canSlots[i], slot))
+            if (canSlots[i].ready && (canSlots[i].searchId & msgIdMask) < (slot->searchId & msgIdMask) &&
+                canSlots[i].timestamp > slot->timestamp)
             {
                 slot = &canSlots[i];
             }
@@ -183,9 +187,9 @@ inline void _removeTimedOutSlots()
         if (canSlots[i].locked && (time - canSlots[i].timestamp) > MY_CAN_SLOT_MAX_AGE_MS)
         {
             CAN_DEBUG(
-                PSTR("!CAN:RCV:SLOT=%" PRIu8 ":SEARCHID=%0x" PRIX32 " message dropped (max age)\n"),
+                PSTR("!CAN:RCV:SLOT=%" PRIu8 ":SEARCHID=0x%" PRIX32 " message dropped (max age)\n"),
                 i,
-                canSlots[i].searchId);
+                canSlots[i].searchId & msgIdMask);
             _cleanSlot(&canSlots[i]);
         }
     }
@@ -195,7 +199,7 @@ inline void _removeTimedOutSlots()
 // 1 bit is last flag (D)
 // 10 bits message_id (E)
 // HIEE EEEE EEEE DCCC BBBB BBBB AAAA AAAA
-static const uint32_t findSlotMask = 0x1FF0FFFFU;
+static const uint32_t findSlotMask = 0x1FFFFFF0U;
 
 // find slot with previous data parts.
 static inline CAN_Slot_t *_findCanSlot(const uint32_t rxId, const uint8_t currentFrameMask)
@@ -203,7 +207,8 @@ static inline CAN_Slot_t *_findCanSlot(const uint32_t rxId, const uint8_t curren
     CAN_Slot_t *slot = nullptr;
     for (uint8_t i = 0; i < MY_CAN_BUF_SIZE; i++)
     {
-        if (canSlots[i].locked && !canSlots[i].ready && canSlots[i].searchId == (rxId & findSlotMask) &&
+        if (canSlots[i].locked && !canSlots[i].ready &&
+            (canSlots[i].searchId & findSlotMask) == (rxId & findSlotMask) &&
             (canSlots[i].frameReceived & currentFrameMask) == 0)
         {
             slot = &canSlots[i];
@@ -225,15 +230,15 @@ static inline bool _checkDataAvailable()
     return false;
 }
 
-// 8 bits from address (A)
-// 8 bitsto address (B)
-// 3 bits current part number  (C)
 // 1 bit is last flag (D)
+// 3 bits current part number  (C)
 // 9 bits message_id (E)
+// 8 bits from address (A)
+// 8 bits to address (B)
 // 1 bit require ack (F)
 // 1 bit is ack (G)
 // header model (32 bits)
-// HGFE EEEE EEEE DCCC BBBB BBBB AAAA AAAA
+// HGFB BBBB BBBA AAAA AAAE EEEE EEEE CCCD
 long unsigned int _buildHeader(
     uint16_t messageId,
     uint8_t totalFramesCount,
@@ -241,18 +246,18 @@ long unsigned int _buildHeader(
     uint8_t toAddress,
     uint8_t fromAddress)
 {
-    long unsigned int header = 0x0; // set, G=0 (To be implemented), F=0 (To be implemented)
-    header += (messageId & 0x01FF); // set messageId
-    header = header << 1;
-    header += ((uint8_t)(totalFramesCount - 1 == currentFrameNumber) & 0x01); // set is last/total flag
+    long unsigned int header = 0x0U; // set, G=0 (To be implemented), F=0 (To be implemented)
+    header += toAddress;
+    header = header << 8;
+    header += fromAddress;
+    header = header << 9;
+    header += (messageId & 0x01FFU); // set messageId
     header = header << 3;
-    header += (currentFrameNumber & 0x07); // set current part number
-    header = header << 8;
-    header += toAddress; // set destination address
-    header = header << 8;
-    header += fromAddress; // set source address
+    header += (currentFrameNumber & 0x07U); // set current part number
+    header = header << 1;
+    header += ((uint8_t)(totalFramesCount - 1 == currentFrameNumber) & 0x01U); // set is last/total flag
     CAN_DEBUG(
-        PSTR("CAN:SND:CANH=%" PRIu32 ",ID=%" PRIu8 ",TOTAL=%" PRIu8 ",CURR=%" PRIu8 ",TO=%" PRIu8 ",FROM=%" PRIu8 "\n"),
+        PSTR("CAN:SND:CANH=%" PRIu32 ",ID=%" PRIu16 ",TOTAL=%" PRIu8 ",CURR=%" PRIu8 ",TO=%" PRIu8 ",FROM=%" PRIu8 "\n"),
         header,
         messageId,
         totalFramesCount,
@@ -270,12 +275,12 @@ void _parseHeader(
     uint8_t *toAddress,
     uint8_t *fromAddress)
 {
-    *fromAddress = (rxId & 0x000000FF);
+    *fromAddress = (rxId & 0x001FE000U) >> 13;
     // cppcheck-suppress unreadVariable
-    *toAddress = (rxId & 0x0000FF00) >> 8;
-    *currentFrameNumber = (rxId & 0x00070000) >> 16;
-    *isLast = (rxId & 0x00080000) >> 19;
-    *messageId = (rxId & msgIdMask) >> 20;
+    *toAddress = (rxId & 0x1FE00000U) >> 22;
+    *currentFrameNumber = (rxId & 0x0000000EU) >> 1;
+    *isLast = (rxId & 0x00000001U);
+    *messageId = (rxId & msgIdMask) >> 4;
 }
 
 bool CAN_transportInit(void)
@@ -453,9 +458,9 @@ bool CAN_transportDataAvailable(void)
             PSTR("CAN:RCV:SLOT:FROM=%" PRIu8 ":MSGID=%" PRIu8 ":PARTS=%" PRIX8 ":LEN=%" PRIu8 "\n"),
             from,
             messageId,
-            slot->frameReceived,
+            slot->frameReceived & 0X0FU,
             slot->len);
-        if (slot->totalFrames > 0 && (slot->frameReceived ^ ((1 << slot->totalFrames) - 1)) == 0)
+        if (slot->totalFrames > 0 && ((slot->frameReceived & 0x0FU) ^ ((1 << slot->totalFrames) - 1)) == 0)
         {
             slot->ready = true;
             CAN_DEBUG(PSTR("CAN:RCV:SLOT:FROM=%" PRIu8 ":MSGID=%" PRIu8 " complete\n"), from, messageId);
