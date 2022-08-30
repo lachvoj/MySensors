@@ -197,10 +197,19 @@ uint8_t STM32FxCAN::begin(uint8_t idmodeset, uint8_t speedset, uint8_t clockset)
     while (!(_canDev->MSR & 0x1UL))
         ; // Wait for Initialization mode
 
-    // _canDev->MCR = 0x51UL;  // Hardware initialization(No automatic retransmission)
-    _canDev->MCR = 0x41UL; // Hardware initialization(With automatic retransmission)
+    // Hardware initialization
 
-    // _canDev->MCR |= 0x4UL; //Tx FIFO priority by request order
+    // _canDev->MCR = 0x41UL; // Hardware initialization(With automatic retransmission)
+
+    // 0x80UL Time triggered comunication mode
+
+    // 0x40UL Automatic buss-off reset
+
+    // ~(0x10UL) Automatic retransmission
+
+    // 0x04UL Tx FIFO priority by request order
+
+    _canDev->MCR = (0x01UL | 0x40UL | 0x04UL);
 
     // Set bit rates
     _canDev->BTR &= ~(((0x03) << 24) | ((0x07) << 20) | ((0x0F) << 16) | (0x1FF));
@@ -227,7 +236,7 @@ uint8_t STM32FxCAN::begin(uint8_t idmodeset, uint8_t speedset, uint8_t clockset)
 
     uint16_t TimeoutMilliseconds = 1000;
     bool can1 = false;
-    _canDev->MCR &= ~(0x1UL); // Require CAN1 to normal mode
+    _canDev->MCR &= ~(0x01UL); // Require CAN1 to normal mode
 
     // Wait for normal mode
     // If the connection is not correct, it will not return to normal mode.
