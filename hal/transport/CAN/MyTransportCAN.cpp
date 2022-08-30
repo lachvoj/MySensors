@@ -461,11 +461,7 @@ bool CAN_transportSend(const uint8_t to, const void *data, const uint8_t len, co
     (void)noACK; // some ack is provided by CAN itself. TODO implement application layer ack.
     const uint8_t *datap = static_cast<const uint8_t *>(data);
     // calculate number of frames
-    uint8_t noOfFrames = len / CAN_MAX_CHAR_IN_MESSAGE;
-    if (len % CAN_MAX_CHAR_IN_MESSAGE != 0)
-    {
-        noOfFrames++;
-    }
+    uint8_t noOfFrames = (len + CAN_MAX_CHAR_IN_MESSAGE - 1) / CAN_MAX_CHAR_IN_MESSAGE;
     // message id updated for every outgoing mesage
     static uint16_t message_id;
 
@@ -532,8 +528,6 @@ bool CAN_transportSend(const uint8_t to, const void *data, const uint8_t len, co
 
 bool CAN_transportDataAvailable(void)
 {
-    bool ret = false;
-
     long unsigned int rxId;
     uint8_t len = 0;
     uint8_t rxBuf[CAN_MAX_CHAR_IN_MESSAGE];
@@ -622,16 +616,14 @@ bool CAN_transportDataAvailable(void)
             slot->ready = true;
 #endif
             CAN_DEBUG(PSTR("CAN:RCV:SLOT:FROM=%" PRIu8 ":MSGID=%" PRIu8 " complete\n"), from, messageId);
-            ret = true;
         }
-        if (freeCanSlots < 2 && _checkDataAvailable())
+        if (freeCanSlots < 2)
         {
-            ret = true;
             break;
         }
     }
 
-    return ret;
+    return _checkDataAvailable();
 }
 
 void CAN_transportTask(void)
