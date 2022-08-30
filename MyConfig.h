@@ -363,7 +363,7 @@
  * is required. For gateway suggested size is at least as count of connected sensors.
  */
 #ifndef MY_CAN_BUF_SIZE
-#define MY_CAN_BUF_SIZE (64u)
+#define MY_CAN_BUF_SIZE (8u)
 #endif
 /**
  * @def MY_CAN_SLOT_MAX_AGE_MS
