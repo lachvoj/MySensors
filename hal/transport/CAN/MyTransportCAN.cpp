@@ -23,7 +23,7 @@ MCP_CAN CAN0(MY_CAN_CS);
 #endif
 
 #if (MAX_MESSAGE_SIZE > 32)
-#error MAX_MESSAGE_SIZE si more than 32 this component won't work.
+#error MAX_MESSAGE_SIZE si more than 32 this component will not work.
 #endif
 
 bool canInitialized = false;
@@ -32,10 +32,11 @@ bool canInitialized = false;
 uint8_t _nodeId;
 
 // buffer element
-typedef struct
+typedef struct CAN_Slot
 {
     uint8_t data[MAX_MESSAGE_SIZE];
-    //search id bits 4-31 frameReceived 0-4
+    uint32_t timestamp;
+    //search id bits 4-31 frameReceived 0-3
     union
     {
         uint32_t searchId;
@@ -43,16 +44,104 @@ typedef struct
     };
     uint8_t totalFrames;
     uint8_t len;
-    bool locked;
+#ifdef MY_CAN_FAST_SLOT_ACCESS
+    union
+    {
+        CAN_Slot *next;
+        CAN_Slot *newer;
+    };
+    union
+    {
+        CAN_Slot *prev;
+        CAN_Slot *older;
+    };
+#else
     bool ready;
-    uint32_t timestamp;
+#endif
 } CAN_Slot_t;
 
 // assembly buffer
 static CAN_Slot_t canSlots[MY_CAN_BUF_SIZE];
+
+// free slots counter
 static uint8_t freeCanSlots;
 
+static const uint32_t findSlotMask =        0x1FFFFFF0U;
+static const uint32_t fromSearchIdMask =    0x001FFFF0U;
+static const uint32_t toAddrMask =          0x1FE00000U;
+static const uint32_t msgIdMask =           0x00001FF0U;
 
+#ifdef MY_CAN_FAST_SLOT_ACCESS
+static CAN_Slot *searchListFirst;
+static CAN_Slot *oldestReady;
+
+static inline void _addToSearchList(CAN_Slot_t *slot)
+{
+    if (searchListFirst != nullptr)
+    {
+        searchListFirst->prev = slot;
+    }
+    slot->next = searchListFirst;
+    searchListFirst = slot;
+}
+
+static inline void _moveFromSearchToOldestReadyList(CAN_Slot_t *slot)
+{
+    if (slot->prev != nullptr)
+    {
+        slot->prev->next = slot->next;
+    }
+    else
+    {
+        searchListFirst = slot->next;
+    }
+    if (slot->next != nullptr)
+    {
+        slot->next->prev = slot->prev;
+    }
+    slot->prev = nullptr;
+    slot->next = nullptr;
+
+    CAN_Slot_t *current = oldestReady;
+    if (current == nullptr)
+    {
+        oldestReady = slot;
+    }
+    else
+    {
+        while(true)
+        {
+            if ((slot->searchId & fromSearchIdMask) < (current->searchId & fromSearchIdMask))
+            {
+                if (current->older != nullptr)
+                {
+                    slot->older = current->older;
+                    slot->older->newer = slot;
+                }
+                else
+                {
+                    oldestReady = slot;
+                }
+                current->older = slot;
+                slot->newer = current;
+
+                break;
+            }
+
+
+            if (current->newer == nullptr)
+            {
+                current->newer = slot;
+                slot->older = current;
+                
+                break;
+            }
+
+            current = current->newer;
+        }
+    }
+}
+#endif
 
 #if defined(ARDUINO_ARCH_STM32F1) && !defined(MCP_CAN)
 bool _initFilters()
@@ -63,8 +152,8 @@ bool _initFilters()
     }
     uint8_t err = 0;
 
-    err += CAN0.setFilterMask32(0, BROADCAST_ADDRESS << 8, 0x0000FF00);
-    err += CAN0.setFilterMask32(1, _nodeId << 8, 0x0000FF00);
+    err += CAN0.setFilterMask32(0, BROADCAST_ADDRESS << 21, toAddrMask);
+    err += CAN0.setFilterMask32(1, _nodeId << 21, toAddrMask);
 
     return err == 0;
 }
@@ -79,10 +168,10 @@ bool _initFilters()
     uint8_t err = 0;
 
     struct can_filter rfilter[2];
-    rfilter[0].can_id = BROADCAST_ADDRESS << 8;
-    rfilter[0].can_mask = 0x0000FF00;
-    rfilter[1].can_id = _nodeId << 8;
-    rfilter[1].can_mask = 0x0000FF00;
+    rfilter[0].can_id = BROADCAST_ADDRESS << 21;
+    rfilter[0].can_mask = toAddrMask;
+    rfilter[1].can_id = _nodeId << 21;
+    rfilter[1].can_mask = toAddrMask;
     err += CAN0.setFilterMask(rfilter, 2);
 
     return err == 0;
@@ -98,9 +187,9 @@ bool _initFilters()
     uint8_t err = 0;
     err += CAN0.setMode(MODE_CONFIG);
 
-    err += CAN0.init_Mask(0, 1, 0x0000FF00); // Init first mask. Only dest address will be used to filter messages.
-    err += CAN0.init_Filt(0, 1, BROADCAST_ADDRESS << 8); // Init first filter. Accept broadcast messages.
-    err += CAN0.init_Filt(1, 1, _nodeId << 8);           // Init second filter. Accept messages send to this node.
+    err += CAN0.init_Mask(0, 1, toAddrMask); // Init first mask. Only dest address will be used to filter messages.
+    err += CAN0.init_Filt(0, 1, BROADCAST_ADDRESS << 21); // Init first filter. Accept broadcast messages.
+    err += CAN0.init_Filt(1, 1, _nodeId << 21);           // Init second filter. Accept messages send to this node.
     // second mask and filters need to be set. Otherwise all messages would be accepted.
     err += CAN0.init_Mask(1, 1, 0xFFFFFFFF); // Init second mask.
     err += CAN0.init_Filt(2, 1, 0xFFFFFFFF); // Init third filter.
@@ -116,6 +205,27 @@ bool _initFilters()
 // clear single slot in buffer.
 static inline void _cleanSlot(CAN_Slot_t *slot)
 {
+#ifdef MY_CAN_FAST_SLOT_ACCESS
+    if (slot->prev != nullptr)
+    {
+        slot->prev->next = slot->next;
+    }
+
+    if (slot->next != nullptr)
+    {
+        slot->next->prev = slot->prev;
+    }
+
+    if (searchListFirst == slot)
+    {
+        searchListFirst = slot->next;
+    }
+    else if (oldestReady == slot)
+    {
+        oldestReady = slot->newer;
+    }
+#endif
+
     memset(slot, 0x0U, sizeof(CAN_Slot_t));
     freeCanSlots++;
 }
@@ -126,7 +236,7 @@ static inline CAN_Slot_t *_findEmptyCanSlot()
     CAN_Slot_t *slot = nullptr;
     for (uint8_t i = 0; i < MY_CAN_BUF_SIZE; i++)
     {
-        if (!canSlots[i].locked)
+        if (canSlots[i].searchId == 0x0U)
         {
             slot = &canSlots[i];
             break;
@@ -150,9 +260,24 @@ static inline CAN_Slot_t *_getOldestSlot()
     return slot;
 }
 
-static const uint32_t msgIdMask = 0x00001FF0U;
 static inline CAN_Slot_t *_getOldestReadySlot()
 {
+
+#ifdef MY_CAN_FAST_SLOT_ACCESS
+
+    CAN_Slot_t *slot = oldestReady;
+    if (oldestReady != nullptr)
+    {
+        oldestReady = slot->newer;
+        slot->newer = nullptr;
+        if (oldestReady != nullptr)
+        {
+            oldestReady->older = nullptr;
+        }
+    }
+
+#else
+
     CAN_Slot_t *slot = nullptr;
     uint8_t i;
     for (i = 0; i < MY_CAN_BUF_SIZE; i++)
@@ -168,13 +293,14 @@ static inline CAN_Slot_t *_getOldestReadySlot()
     {
         for (i++; i < MY_CAN_BUF_SIZE; i++)
         {
-            if (canSlots[i].ready && (canSlots[i].searchId & msgIdMask) < (slot->searchId & msgIdMask) &&
-                canSlots[i].timestamp > slot->timestamp)
+            if (canSlots[i].ready && (canSlots[i].searchId & fromSearchIdMask) < (slot->searchId & fromSearchIdMask))
             {
                 slot = &canSlots[i];
             }
         }
     }
+
+#endif
 
     return slot;
 }
@@ -184,43 +310,61 @@ inline void _removeTimedOutSlots()
     uint32_t time = (uint32_t)micros();
     for (uint8_t i = 0; i < MY_CAN_BUF_SIZE; i++)
     {
-        if (canSlots[i].locked && (time - canSlots[i].timestamp) > MY_CAN_SLOT_MAX_AGE_MS)
+        if ((canSlots[i].searchId != 0x0U) && (time - canSlots[i].timestamp) > MY_CAN_SLOT_MAX_AGE_MS)
         {
             CAN_DEBUG(
                 PSTR("!CAN:RCV:SLOT=%" PRIu8 ":SEARCHID=0x%" PRIX32 " message dropped (max age)\n"),
                 i,
-                canSlots[i].searchId & msgIdMask);
+                canSlots[i].searchId);
             _cleanSlot(&canSlots[i]);
         }
     }
 }
 
-// current part number 3 bits (C)
-// 1 bit is last flag (D)
-// 10 bits message_id (E)
-// HIEE EEEE EEEE DCCC BBBB BBBB AAAA AAAA
-static const uint32_t findSlotMask = 0x1FFFFFF0U;
 
 // find slot with previous data parts.
 static inline CAN_Slot_t *_findCanSlot(const uint32_t rxId, const uint8_t currentFrameMask)
 {
+#ifdef MY_CAN_FAST_SLOT_ACCESS
+
+    CAN_Slot_t *slot = searchListFirst;
+    while (slot != nullptr)
+    {
+        if ((slot->searchId & findSlotMask) == (rxId & findSlotMask) && (slot->frameReceived & currentFrameMask) == 0)
+        {
+            break;
+        }
+        else
+        {
+            slot = slot->next;
+        }
+    }
+
+#else
+
     CAN_Slot_t *slot = nullptr;
     for (uint8_t i = 0; i < MY_CAN_BUF_SIZE; i++)
     {
-        if (canSlots[i].locked && !canSlots[i].ready &&
-            (canSlots[i].searchId & findSlotMask) == (rxId & findSlotMask) &&
+        if (!canSlots[i].ready && (canSlots[i].searchId & findSlotMask) == (rxId & findSlotMask) &&
             (canSlots[i].frameReceived & currentFrameMask) == 0)
         {
             slot = &canSlots[i];
             break;
         }
     }
+#endif
 
     return slot;
 }
 
 static inline bool _checkDataAvailable()
 {
+#ifdef MY_CAN_FAST_SLOT_ACCESS
+
+    return (oldestReady != nullptr);
+
+#else
+
     for (uint8_t i = 0; i < MY_CAN_BUF_SIZE; i++)
     {
         if (canSlots[i].ready)
@@ -228,6 +372,8 @@ static inline bool _checkDataAvailable()
     }
 
     return false;
+
+#endif
 }
 
 // 1 bit is last flag (D)
@@ -275,12 +421,11 @@ void _parseHeader(
     uint8_t *toAddress,
     uint8_t *fromAddress)
 {
-    *fromAddress = (rxId & 0x001FE000U) >> 13;
-    // cppcheck-suppress unreadVariable
-    *toAddress = (rxId & 0x1FE00000U) >> 22;
-    *currentFrameNumber = (rxId & 0x0000000EU) >> 1;
-    *isLast = (rxId & 0x00000001U);
-    *messageId = (rxId & msgIdMask) >> 4;
+    *isLast = (bool)(rxId & 0x00000001U);
+    *currentFrameNumber = (uint8_t)((rxId & 0x0000000EU) >> 1);
+    *messageId = (uint16_t)((rxId & msgIdMask) >> 4);
+    *fromAddress = (uint8_t)((rxId & 0x001FE000U) >> 13);
+    *toAddress = (uint8_t)((rxId & toAddrMask) >> 21);
 }
 
 bool CAN_transportInit(void)
@@ -294,12 +439,19 @@ bool CAN_transportInit(void)
 
     freeCanSlots = MY_CAN_BUF_SIZE;
 
+#ifdef MY_CAN_FAST_SLOT_ACCESS
+    searchListFirst = nullptr;
+    oldestReady = nullptr;
+#endif
+
     if (CAN0.begin(MCP_STDEXT, MY_CAN_SPEED, MY_CAN_CLOCK) != CAN_OK)
     {
         canInitialized = false;
         return false;
     }
     canInitialized = true;
+
+    
 
     return _initFilters();
 }
@@ -446,8 +598,10 @@ bool CAN_transportDataAvailable(void)
             }
             freeCanSlots--;
             slot->searchId = rxId & findSlotMask;
-            slot->locked = true;
-            slot->timestamp = (uint64_t)micros();
+            slot->timestamp = (uint32_t)micros();
+#ifdef MY_CAN_FAST_SLOT_ACCESS
+            _addToSearchList(slot);
+#endif
         }
         memcpy(slot->data + currentFrame * CAN_MAX_CHAR_IN_MESSAGE, rxBuf, len);
         slot->len += len;
@@ -462,7 +616,11 @@ bool CAN_transportDataAvailable(void)
             slot->len);
         if (slot->totalFrames > 0 && ((slot->frameReceived & 0x0FU) ^ ((1 << slot->totalFrames) - 1)) == 0)
         {
+#ifdef MY_CAN_FAST_SLOT_ACCESS
+            _moveFromSearchToOldestReadyList(slot);
+#else
             slot->ready = true;
+#endif
             CAN_DEBUG(PSTR("CAN:RCV:SLOT:FROM=%" PRIu8 ":MSGID=%" PRIu8 " complete\n"), from, messageId);
             ret = true;
         }

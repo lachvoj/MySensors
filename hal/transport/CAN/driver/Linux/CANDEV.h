@@ -12,7 +12,7 @@ class CANDEVClass
     char _canDevice[10];
 
   public:
-    CANDEVClass(char *canDevice);
+    CANDEVClass(const char *canDevice);
     ~CANDEVClass();
     uint8_t begin(uint8_t idmodeset, uint8_t speedset, uint8_t clockset = 0);      // Initialize controller parameters
     uint8_t setFilterMask(can_filter *filters, uint8_t count);                     // Set filter and its mask
