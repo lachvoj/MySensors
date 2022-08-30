@@ -363,7 +363,7 @@
  * is required. For gateway suggested size is at least as count of connected sensors.
  */
 #ifndef MY_CAN_BUF_SIZE
-#define MY_CAN_BUF_SIZE (8u)
+#define MY_CAN_BUF_SIZE (64u)
 #endif
 /**
  * @def MY_CAN_SLOT_MAX_AGE_MS
@@ -372,6 +372,14 @@
 #ifndef MY_CAN_SLOT_MAX_AGE_MS
 #define MY_CAN_SLOT_MAX_AGE_MS 10000
 #endif
+/**
+ * @def MY_CAN_FAST_SLOT_ACCESS
+ * @brief For faster acessing to can assembly buffer items additional two linked lists is created. It will require
+ * additional ram space of (MY_CAN_BUF_SIZE * ((2 * sizeof(void *) - sizeof(bool)) + 2 * sizeof(void *)).
+ * It increase speed up to 70% for biffer assembly buffer.
+ * Define this if you want to use it.
+ */
+//#define MY_CAN_FAST_SLOT_ACCESS
 /**
  * @def MY_CAN_LINUX_CANDEV
  * @brief define this if you want to use linux can device.

@@ -68,7 +68,7 @@ inline static void _sigactionHandler(int val)
 }
 #endif
 
-CANDEVClass::CANDEVClass(char *canDevice)
+CANDEVClass::CANDEVClass(const char *canDevice)
 {
     strcpy(_canDevice, canDevice);
 }
