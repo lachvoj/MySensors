@@ -15,9 +15,11 @@ CONFIG_FILE=Makefile.inc
 
 include $(CONFIG_FILE)
 
-CPPFLAGS+=-Ofast -g -Wall -Wextra
+#CPPFLAGS+=-Ofast -g -Wall -Wextra
 DEPFLAGS=-MT $@ -MMD -MP
 
+LIB_BIN=libmysensors.a
+LIB=$(BINDIR)/$(LIB_BIN)
 GATEWAY_BIN=mysgw
 GATEWAY=$(BINDIR)/$(GATEWAY_BIN)
 GATEWAY_C_SOURCES=$(wildcard hal/architecture/Linux/drivers/core/*.c)
@@ -65,7 +67,7 @@ DEPS+=$(GATEWAY_OBJECTS:.o=.d)
 
 .PHONY: all createdir cleanconfig clean install uninstall
 
-all: createdir $(ARDUINO) $(GATEWAY)
+all: createdir $(ARDUINO) $(GATEWAY) $(LIB)
 
 createdir:
 	@mkdir -p $(BUILDDIR) $(BINDIR)
@@ -78,6 +80,11 @@ $(ARDUINO): $(ARDUINO_LIB_OBJS)
 # Gateway Build
 $(GATEWAY): $(GATEWAY_OBJECTS) $(ARDUINO_LIB_OBJS)
 	$(CXX) $(LDFLAGS) -o $@ $(GATEWAY_OBJECTS) $(ARDUINO_LIB_OBJS)
+
+# Lib build
+$(LIB): $(GATEWAY_OBJECTS) $(ARDUINO_LIB_OBJS)
+	@mkdir -p $(dir $@)
+	ar rcs $@ $(GATEWAY_OBJECTS) $(ARDUINO_LIB_OBJS)
 
 # Include all .d files
 -include $(DEPS)
