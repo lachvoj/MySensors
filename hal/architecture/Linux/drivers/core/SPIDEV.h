@@ -120,11 +120,11 @@ public:
 	/**
 	 * @brief Start SPI operations.
 	 */
-	void begin();
+	void begin(int spiClock = SPI_CLOCK_BASE);
 	/**
 	 * @brief Start SPI operations.
 	 */
-	void begin(int busNo);
+	void begin(int busNo, int spiClock = SPI_CLOCK_BASE);
 	/**
 	 * @brief End SPI operations.
 	 */
