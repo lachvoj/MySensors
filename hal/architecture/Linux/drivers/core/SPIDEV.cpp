@@ -33,17 +33,20 @@ SPIDEVClass::SPIDEVClass(const std::string& device):device(device)
 	pthread_mutex_init(&spiMutex, &attr);
 }
 
-void SPIDEVClass::begin()
+void SPIDEVClass::begin(int spiClock)
 {
-	if (!initialized)
+	if (!initialized) {
+		this->speed = spiClock;
 		init();
+	}
 
 	initialized++; // reference count
 }
 
-void SPIDEVClass::begin(int busNo)
+void SPIDEVClass::begin(int busNo, int spiClock)
 {
 	if (!initialized) {
+		this->speed = spiClock;
 		/* set spidev accordingly to busNo like:
 		 * busNo = 23 -> /dev/spidev2.3
 		 *
