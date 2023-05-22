@@ -53,9 +53,18 @@
 #endif
 
 // mapping
-// #define vsnprintf_P vsnprintf
-// #define strncpy_P strncpy
-// #define printf_P printf
+#ifndef vsnprintf_P
+#define vsnprintf_P vsnprintf
+#endif
+
+#ifndef strncpy_P
+#define strncpy_P strncpy
+#endif
+
+#ifndef printf_P
+#define printf_P printf
+#endif
+
 #define yield()				  // not defined
 
 #ifndef digitalPinToInterrupt
