@@ -9,11 +9,15 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 
+#if defined(__linux__) && defined(MY_LINUX_EPOLL)
+#include "MyEPoll.h"
+#endif
+
 #include "CANDEV.h"
 
 // WARNING: will work only for one can if
 // TODO: expand to more can interfaces
-static int _s;
+static int _s = -1;
 
 #ifdef MY_CAN_CANDEV_RB
 typedef struct
@@ -75,11 +79,22 @@ CANDEVClass::CANDEVClass(const char *canDevice)
 
 CANDEVClass::~CANDEVClass()
 {
+#if defined(__linux__) && defined(MY_LINUX_EPOLL)
+    myEpoll.removeDescriptor(_s);
+#endif
     close(_s);
 }
 
 uint8_t CANDEVClass::begin(uint8_t idmodeset, uint8_t speedset, uint8_t clockset)
 {
+    if (_s >= 0)
+    {
+#if defined(__linux__) && defined(MY_LINUX_EPOLL)
+        myEpoll.removeDescriptor(_s);
+#endif
+        close(_s);
+    }
+
     _s = socket(PF_CAN, SOCK_RAW, CAN_RAW);
     if (_s < 0)
         return CAN_FAILINIT;
@@ -130,6 +145,10 @@ uint8_t CANDEVClass::begin(uint8_t idmodeset, uint8_t speedset, uint8_t clockset
         return CAN_FAILINIT;
 
     _initialized = true;
+
+#if defined(__linux__) && defined(MY_LINUX_EPOLL)
+    myEpoll.addDescriptor(_s);
+#endif
 
     return CAN_OK;
 }
@@ -188,7 +207,7 @@ uint8_t CANDEVClass::readMsgBuf(uint32_t *id, uint8_t *ext, uint8_t *len, uint8_
 {
     if (!_initialized)
         return CAN_FAILINIT;
-    
+
     struct can_frame *CAN_rx_msg;
 
 #ifdef MY_CAN_CANDEV_RB

@@ -32,6 +32,10 @@
 #include "log.h"
 #include "EthernetClient.h"
 
+#if defined(__linux__) && defined(MY_LINUX_EPOLL)
+#include "MyEPoll.h"
+#endif
+
 EthernetServer::EthernetServer(uint16_t port, uint16_t max_clients) : port(port),
 	max_clients(max_clients), sockfd(-1)
 {
@@ -52,6 +56,9 @@ void EthernetServer::begin(IPAddress address)
 	char portstr[6];
 
 	if (sockfd != -1) {
+#if defined(__linux__) && defined(MY_LINUX_EPOLL)
+		myEpoll.removeDescriptor(sockfd);
+#endif
 		close(sockfd);
 		sockfd = -1;
 	}
@@ -108,6 +115,10 @@ void EthernetServer::begin(IPAddress address)
 	inet_ntop(p->ai_family, addr, ipstr, sizeof ipstr);
 	logDebug("Listening for connections on %s:%s\n", ipstr, portstr);
 
+#if defined(__linux__) && defined(MY_LINUX_EPOLL)
+	myEpoll.addDescriptor(sockfd);
+#endif
+
 	freeaddrinfo(servinfo);
 }
 
@@ -124,6 +135,9 @@ bool EthernetServer::hasClient()
 					break;
 				}
 			}
+#if defined(__linux__) && defined(MY_LINUX_EPOLL)
+			myEpoll.removeDescriptor(clients[i]);
+#endif
 			client.stop();
 			clients[i] = clients.back();
 			clients.pop_back();
@@ -187,7 +201,7 @@ void EthernetServer::_accept()
 	char ipstr[INET_ADDRSTRLEN];
 
 	sin_size = sizeof client_addr;
-	new_fd = accept(sockfd, (struct sockaddr *)&client_addr, &sin_size);
+	new_fd = accept4(sockfd, (struct sockaddr *)&client_addr, &sin_size, SOCK_NONBLOCK);
 	if (new_fd == -1) {
 		if (errno != EAGAIN && errno != EWOULDBLOCK) {
 			logError("accept: %s\n", strerror(errno));
@@ -204,6 +218,10 @@ void EthernetServer::_accept()
 
 	new_clients.push_back(new_fd);
 	clients.push_back(new_fd);
+
+#if defined(__linux__) && defined(MY_LINUX_EPOLL)
+	myEpoll.addDescriptor(new_fd);
+#endif
 
 	void *addr = &(((struct sockaddr_in*)&client_addr)->sin_addr);
 	inet_ntop(client_addr.ss_family, addr, ipstr, sizeof ipstr);

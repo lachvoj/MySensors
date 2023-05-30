@@ -31,6 +31,10 @@
 #include "config.h"
 #include "MySensorsCore.h"
 
+#if defined(__linux__) && defined(MY_LINUX_EPOLL)
+#include "MyEPoll.h"
+#endif
+
 void handle_sigint(int sig)
 {
 	if (sig == SIGINT) {
@@ -479,6 +483,9 @@ int main(int argc, char *argv[])
 	}
 
 	for (;;) {
+#if defined(__linux__) && defined(MY_LINUX_EPOLL)
+		myEpoll.run();
+#endif
 		_process();  // Process incoming data
 		if (loop) {
 			loop(); // Call sketch loop

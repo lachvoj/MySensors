@@ -2449,6 +2449,18 @@
 #define MY_DEFAULT_RX_LED_PIN MY_HW_TX_LED_PIN
 #endif
 
+// Linux epoll
+
+/**
+ * @def MY_LINUX_EPOLL
+ * @brief Enables epoll wait.
+ *
+ * Enables epoll wait on opened devices/scokets (CAN, SPIDEV, EthernetServer, SerialPort).
+ * This should lower cpu load on linux systems.
+ * 
+ */
+//#define MY_LINUX_EPOLL
+
 #endif	// MyConfig_h
 
 // Doxygen specific constructs, not included when built normally
