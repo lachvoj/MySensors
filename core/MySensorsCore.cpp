@@ -77,7 +77,7 @@ void _process(void)
 	transportProcess();
 #endif
 
-#if defined(__linux__)
+#if defined(__linux__) && !defined(MY_LINUX_EPOLL)
 	// To avoid high cpu usage
 	usleep(10000); // 10ms
 #endif

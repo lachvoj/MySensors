@@ -31,6 +31,10 @@
 #include "log.h"
 #include "SerialPort.h"
 
+#if defined(__linux__) && defined(MY_LINUX_EPOLL)
+#include "MyEPoll.h"
+#endif
+
 SerialPort::SerialPort(const char *port, bool isPty) : serialPort(std::string(port)), isPty(isPty)
 {
 	sd = -1;
@@ -173,6 +177,10 @@ bool SerialPort::open(int bauds)
 		return false;
 	}
 
+#if defined(__linux__) && defined(MY_LINUX_EPOLL)
+	myEpoll.addDescriptor(sd);
+#endif
+
 	usleep(10000);
 
 	return true;
@@ -277,6 +285,9 @@ void SerialPort::flush()
 
 void SerialPort::end()
 {
+#if defined(__linux__) && defined(MY_LINUX_EPOLL)
+		myEpoll.removeDescriptor(sd);
+#endif
 	close(sd);
 
 	if (isPty) {

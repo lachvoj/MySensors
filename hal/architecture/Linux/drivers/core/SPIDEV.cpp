@@ -27,6 +27,10 @@
 #include <unistd.h>
 #include "log.h"
 
+#if defined(__linux__) && defined(MY_LINUX_EPOLL)
+#include "MyEPoll.h"
+#endif
+
 SPIDEVClass::SPIDEVClass(const std::string& device):device(device)
 {
 	pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
@@ -69,6 +73,9 @@ void SPIDEVClass::end()
 
 	if (!initialized) {
 		if (!(fd < 0)) {
+#if defined(__linux__) && defined(MY_LINUX_EPOLL)
+		myEpoll.removeDescriptor(fd);
+#endif
 			close(fd);
 			fd = -1;
 		}
@@ -290,6 +297,9 @@ void SPIDEVClass::init()
 	pthread_mutex_lock(&spiMutex);
 
 	if (fd >= 0) {
+#if defined(__linux__) && defined(MY_LINUX_EPOLL)
+		myEpoll.removeDescriptor(fd);
+#endif
 		close(fd);
 	}
 
@@ -359,6 +369,10 @@ void SPIDEVClass::init()
 		logError("Can't set SPI bit order.\n");
 		abort();
 	}
+
+#if defined(__linux__) && defined(MY_LINUX_EPOLL)
+		myEpoll.addDescriptor(fd);
+#endif
 
 	pthread_mutex_unlock(&spiMutex);
 }
