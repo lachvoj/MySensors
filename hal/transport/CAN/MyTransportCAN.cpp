@@ -155,7 +155,7 @@ bool _initFilters()
     err += CAN0.setFilterMask32(0, BROADCAST_ADDRESS << 21, toAddrMask);
     err += CAN0.setFilterMask32(1, _nodeId << 21, toAddrMask);
 
-    return err == 0;
+    return (err == 0);
 }
 #elif defined(__linux__) && defined(MY_CAN_LINUX_CANDEV)
 bool _initFilters()
