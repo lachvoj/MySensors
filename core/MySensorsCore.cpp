@@ -168,6 +168,12 @@ void _begin(void)
 	hwReadConfigBlock(&myParentNodeID, (void*)EEPROM_PARENT_NODE_ID_ADDRESS, SIZE_PARENT_NODE_ID);
 	if (myParentNodeID != MY_PARENT_NODE_ID)
 		hwWriteConfig(EEPROM_PARENT_NODE_ID_ADDRESS, MY_PARENT_NODE_ID);
+
+	// First run if eeprom node ID is 0 remap it to AUTO
+	uint8_t mySensorNodeID;
+	hwReadConfigBlock(&mySensorNodeID, (void*)EEPROM_NODE_ID_ADDRESS, SIZE_NODE_ID);
+	if (mySensorNodeID == 0)
+		hwWriteConfig(EEPROM_NODE_ID_ADDRESS, AUTO);
 	// Initialise transport layer
 	transportInitialise();
 	// Register transport=ready callback
