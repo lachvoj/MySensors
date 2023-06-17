@@ -17,190 +17,205 @@
  * version 2 as published by the Free Software Foundation.
  */
 
-#include "MyHwSTM32F1.h"
-
 #include <IWatchdog.h>
 
+#include "MyHwSTM32F1.h"
+
 /*
-* Pinout STM32F103C8 dev board:
-* http://wiki.stm32duino.com/images/a/ae/Bluepillpinout.gif
-*
-* Wiring RFM69 radio / SPI1
-* --------------------------------------------------
-* CLK	PA5
-* MISO	PA6
-* MOSI	PA7
-* CSN	PA4
-* CE	NA
-* IRQ	PA3 (default)
-*
-* Wiring RF24 radio / SPI1
-* --------------------------------------------------
-* CLK	PA5
-* MISO	PA6
-* MOSI	PA7
-* CSN	PA4
-* CE	PB0 (default)
-* IRQ	NA
-*
-*/
+ * Pinout STM32F103C8 dev board:
+ * http://wiki.stm32duino.com/images/a/ae/Bluepillpinout.gif
+ *
+ * Wiring RFM69 radio / SPI1
+ * --------------------------------------------------
+ * CLK	PA5
+ * MISO	PA6
+ * MOSI	PA7
+ * CSN	PA4
+ * CE	NA
+ * IRQ	PA3 (default)
+ *
+ * Wiring RF24 radio / SPI1
+ * --------------------------------------------------
+ * CLK	PA5
+ * MISO	PA6
+ * MOSI	PA7
+ * CSN	PA4
+ * CE	PB0 (default)
+ * IRQ	NA
+ *
+ */
 bool hwInit(void)
 {
 #if !defined(MY_DISABLED_SERIAL)
-	MY_SERIALDEVICE.begin(MY_BAUD_RATE);
+    MY_SERIALDEVICE.begin(MY_BAUD_RATE);
 #if defined(MY_GATEWAY_SERIAL)
-	while (!MY_SERIALDEVICE) {}
+    while (!MY_SERIALDEVICE) {}
 #endif
 #endif
 
-	return true;
+    return true;
 }
 
 void hwReadConfigBlock(void *buf, void *addr, size_t length)
 {
-	uint8_t *dst = static_cast<uint8_t *>(buf);
-	int pos = reinterpret_cast<int>(addr);
-	while (length-- > 0) {
-		*dst++ = EEPROM.read(pos++);
-	}
+    uint8_t *dst = static_cast<uint8_t *>(buf);
+    int pos = reinterpret_cast<int>(addr);
+    while (length-- > 0)
+    {
+        *dst++ = EEPROM.read(pos++);
+    }
 }
 
 void hwWriteConfigBlock(void *buf, void *addr, size_t length)
 {
-	uint8_t *src = static_cast<uint8_t *>(buf);
-	int pos = reinterpret_cast<int>(addr);
-	while (length-- > 0) {
-		EEPROM.write(pos++, *src++);
-	}
+    uint8_t *src = static_cast<uint8_t *>(buf);
+    int pos = reinterpret_cast<int>(addr);
+    while (length-- > 0)
+    {
+        EEPROM.write(pos++, *src++);
+    }
 }
 
 uint8_t hwReadConfig(const int addr)
 {
-	uint8_t value;
-	hwReadConfigBlock(&value, reinterpret_cast<void *>(addr), 1);
-	return value;
+    uint8_t value;
+    hwReadConfigBlock(&value, reinterpret_cast<void *>(addr), 1);
+    return value;
 }
 
 void hwWriteConfig(const int addr, uint8_t value)
 {
-	hwWriteConfigBlock(&value, reinterpret_cast<void *>(addr), 1);
+    hwWriteConfigBlock(&value, reinterpret_cast<void *>(addr), 1);
 }
 
 int8_t hwSleep(uint32_t ms)
 {
-	// TODO: Not supported!
-	(void)ms;
-	return MY_SLEEP_NOT_POSSIBLE;
+    // TODO: Not supported!
+    (void)ms;
+    return MY_SLEEP_NOT_POSSIBLE;
 }
 
 int8_t hwSleep(const uint8_t interrupt, const uint8_t mode, uint32_t ms)
 {
-	// TODO: Not supported!
-	(void)interrupt;
-	(void)mode;
-	(void)ms;
-	return MY_SLEEP_NOT_POSSIBLE;
+    // TODO: Not supported!
+    (void)interrupt;
+    (void)mode;
+    (void)ms;
+    return MY_SLEEP_NOT_POSSIBLE;
 }
 
-int8_t hwSleep(const uint8_t interrupt1, const uint8_t mode1, const uint8_t interrupt2,
-               const uint8_t mode2,
-               uint32_t ms)
+int8_t hwSleep(
+    const uint8_t interrupt1,
+    const uint8_t mode1,
+    const uint8_t interrupt2,
+    const uint8_t mode2,
+    uint32_t ms)
 {
-	// TODO: Not supported!
-	(void)interrupt1;
-	(void)mode1;
-	(void)interrupt2;
-	(void)mode2;
-	(void)ms;
-	return MY_SLEEP_NOT_POSSIBLE;
+    // TODO: Not supported!
+    (void)interrupt1;
+    (void)mode1;
+    (void)interrupt2;
+    (void)mode2;
+    (void)ms;
+    return MY_SLEEP_NOT_POSSIBLE;
 }
 
 uint16_t adc_read(ADC_TypeDef *dev, uint8_t channel)
 {
-	uint32_t tmp = dev->SQR1;
+    uint32_t tmp = dev->SQR1;
     tmp &= ~ADC_SQR1_L;
     tmp |= 0 << 20;
     dev->SQR1 = tmp;
 
-	dev->SQR3 = channel;
-	dev->CR2 |= ADC_CR2_SWSTART;
-	while (!(dev->SR & ADC_SR_EOC));
+    dev->SQR3 = channel;
+    dev->CR2 |= ADC_CR2_SWSTART;
+    while (!(dev->SR & ADC_SR_EOC))
+        ;
 
-	return (uint16_t)(dev->DR & ADC_DR_DATA);
+    return (uint16_t)(dev->DR & ADC_DR_DATA);
 }
 
-void adc_calibrate(ADC_TypeDef *dev) {
+void adc_calibrate(ADC_TypeDef *dev)
+{
     dev->CR2 |= ADC_CR2_RSTCAL;
-    while (dev->CR2 & ADC_CR2_RSTCAL);
+    while (dev->CR2 & ADC_CR2_RSTCAL)
+        ;
 
     dev->CR2 |= ADC_CR2_RSTCAL;
-    while (dev->CR2 & ADC_CR2_RSTCAL);
+    while (dev->CR2 & ADC_CR2_RSTCAL)
+        ;
 }
 
 void hwRandomNumberInit(void)
 {
-	// use internal temperature sensor as noise source
-	ADC1->CR2 |= ADC_CR2_TSVREFE;
-	ADC1->SMPR1 |= ADC_SMPR1_SMP16;
+    // use internal temperature sensor as noise source
+    ADC1->CR2 |= ADC_CR2_TSVREFE;
+    ADC1->SMPR1 |= ADC_SMPR1_SMP16;
 
-	uint32_t seed = 0;
-	uint16_t currentValue = 0;
-	uint16_t newValue = 0;
+    uint32_t seed = 0;
+    uint16_t currentValue = 0;
+    uint16_t newValue = 0;
 
-	for (uint8_t i = 0; i < 32; i++) {
-		const uint32_t timeout = hwMillis() + 20;
-		while (timeout >= hwMillis()) {
-			newValue = adc_read(ADC1, 16);
-			if (newValue != currentValue) {
-				currentValue = newValue;
-				break;
-			}
-		}
-		seed ^= ( (newValue + hwMillis()) & 7) << i;
-	}
-	randomSeed(seed);
-	ADC1->CR2 &= ~ADC_CR2_TSVREFE; // disable VREFINT and temp sensor
+    for (uint8_t i = 0; i < 32; i++)
+    {
+        const uint32_t timeout = hwMillis() + 20;
+        while (timeout >= hwMillis())
+        {
+            newValue = adc_read(ADC1, 16);
+            if (newValue != currentValue)
+            {
+                currentValue = newValue;
+                break;
+            }
+        }
+        seed ^= ((newValue + hwMillis()) & 7) << i;
+    }
+    randomSeed(seed);
+    ADC1->CR2 &= ~ADC_CR2_TSVREFE; // disable VREFINT and temp sensor
 }
 
 bool hwUniqueID(unique_id_t *uniqueID)
 {
-	(void)memcpy((uint8_t *)uniqueID, (uint32_t *)0x1FFFF7E0, 16); // FlashID + ChipID
-	return true;
+    (void)memcpy((uint8_t *)uniqueID, (uint32_t *)0x1FFFF7E0, 16); // FlashID + ChipID
+    return true;
 }
 
 uint16_t hwCPUVoltage(void)
 {
-	ADC1->CR2 |= ADC_CR2_TSVREFE; // enable VREFINT and temp sensor
-	ADC1->SMPR1 =  ADC_SMPR1_SMP17; // sample rate for VREFINT ADC channel
-	adc_calibrate(ADC1);
+    ADC1->CR2 |= ADC_CR2_TSVREFE;  // enable VREFINT and temp sensor
+    ADC1->SMPR1 = ADC_SMPR1_SMP17; // sample rate for VREFINT ADC channel
+    adc_calibrate(ADC1);
 
-	const uint16_t vdd = adc_read(ADC1, 17);
-	ADC1->CR2 &= ~ADC_CR2_TSVREFE; // disable VREFINT and temp sensor
-	return (uint16_t)(1200u * 4096u / vdd);
+    const uint16_t vdd = adc_read(ADC1, 17);
+    ADC1->CR2 &= ~ADC_CR2_TSVREFE; // disable VREFINT and temp sensor
+    return (uint16_t)(1200u * 4096u / vdd);
 }
 
 uint16_t hwCPUFrequency(void)
 {
-	return F_CPU/100000UL;
+    return F_CPU / 100000UL;
 }
 
 int8_t hwCPUTemperature(void)
 {
-	ADC1->CR2 |= ADC_CR2_TSVREFE; // enable VREFINT and Temperature sensor
-	ADC1->SMPR1 |= ADC_SMPR1_SMP16 | ADC_SMPR1_SMP17;
-	adc_calibrate(ADC1);
+    ADC1->CR2 |= ADC_CR2_TSVREFE; // enable VREFINT and Temperature sensor
+    ADC1->SMPR1 |= ADC_SMPR1_SMP16 | ADC_SMPR1_SMP17;
+    adc_calibrate(ADC1);
 
-	//const uint16_t adc_temp = adc_read(ADC1, 16);
-	//const uint16_t vref = 1200 * 4096 / adc_read(ADC1, 17);
-	// calibrated at 25°C, ADC output = 1430mV, avg slope = 4.3mV / °C, increasing temp ~ lower voltage
-	const int8_t temp = static_cast<int8_t>((1430.0 - (adc_read(ADC1, 16) * 1200 / adc_read(ADC1,
-	                                        17))) / 4.3 + 25.0);
-	ADC1->CR2 &= ~ADC_CR2_TSVREFE; // disable VREFINT and temp sensor
-	return (temp - MY_STM32F1_TEMPERATURE_OFFSET) / MY_STM32F1_TEMPERATURE_GAIN;
+    // const uint16_t adc_temp = adc_read(ADC1, 16);
+    //const uint16_t vref = 1200 * 4096 / adc_read(ADC1, 17);
+    // calibrated at 25°C, ADC output = 1430mV, avg slope = 4.3mV / °C, increasing temp ~ lower voltage
+    const uint32_t u32AdcTmpValue = adc_read_value(PADC_TEMP, ADC_RESOLUTION);
+    const uint32_t u32AdcRefValue = adc_read_value(PADC_VREF, ADC_RESOLUTION);
+    const int8_t temp = static_cast<int8_t>((1430.0 - (u32AdcTmpValue * 1200 / u32AdcRefValue)) / 4.3 + 25.0);
+
+    ADC1->CR2 &= ~ADC_CR2_TSVREFE; // disable VREFINT and temp sensor
+	
+    return (temp - MY_STM32F1_TEMPERATURE_OFFSET) / MY_STM32F1_TEMPERATURE_GAIN;
 }
 
 uint16_t hwFreeMem(void)
 {
-	//Not yet implemented
-	return FUNCTION_NOT_SUPPORTED;
+    // Not yet implemented
+    return FUNCTION_NOT_SUPPORTED;
 }
