@@ -57,7 +57,7 @@ bool RFM69_transportDataAvailable(void)
 
 void RFM69_transportTask(void)
 {
-	RFM69_handling();
+	RFM69_handler();
 #if defined(MY_TRANSPORT_RX_QUEUE)
 	if (RFM69_available()) {
 		RXQueuedMessage_t *msgIn = transportHALGetQueueBuffer();
@@ -73,7 +73,7 @@ void RFM69_transportTask(void)
 
 void RFM69_transportEncrypt(const uint8_t *key)
 {
-	RFM69_HWencryption((const char *)key);
+	RFM69_encrypt((const char *)key);
 }
 
 bool RFM69_transportSanityCheck(void)
