@@ -33,20 +33,33 @@
 #include "stdlib_noniso.h"
 
 #ifdef LINUX_ARCH_RASPBERRYPI
+#ifdef LINUX_GPIOD
+#include "GPIOD.hpp"
+#define pinMode(pin, direction) GPIOD.pinMode(pin, direction)
+#define digitalWrite(pin, value) GPIOD.digitalWrite(pin, value)
+#define digitalRead(pin) GPIOD.digitalRead(pin)
+#define digitalPinToInterrupt(pin) GPIOD.digitalPinToInterrupt(pin)
+#include "GPIODInterrupt.hpp"
+#define attachInterrupt(gpioPin, func, mode) GPIODInterrupt.attachInterrupt(gpioPin, func, mode)
+#define detachInterrupt(gpioPin) GPIODInterrupt.detachInterrupt(gpioPin)
+#define interrupts() GPIODInterrupt.interrupts()
+#define noInterrupts() GPIODInterrupt.noInterrupts()
+#else
 #include "RPi.h"
 #define pinMode(pin, direction) RPi.pinMode(pin, direction)
 #define digitalWrite(pin, value) RPi.digitalWrite(pin, value)
 #define digitalRead(pin) RPi.digitalRead(pin)
 #define digitalPinToInterrupt(pin) RPi.digitalPinToInterrupt(pin)
+#include "interrupt.h"
+#endif
 #else
 #include "GPIO.h"
 #define pinMode(pin, direction) GPIO.pinMode(pin, direction)
 #define digitalWrite(pin, value) GPIO.digitalWrite(pin, value)
 #define digitalRead(pin) GPIO.digitalRead(pin)
 #define digitalPinToInterrupt(pin) GPIO.digitalPinToInterrupt(pin)
-#endif
-
 #include "interrupt.h"
+#endif
 
 #undef PSTR
 #define PSTR(x) (x)
