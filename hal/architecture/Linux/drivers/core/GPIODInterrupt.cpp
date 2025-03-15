@@ -110,9 +110,6 @@ void *GPIODInterruptClass::interruptHandler(void *args)
                 logInfo("GPIODInterruptClass::interruptHandler: FALLING Edge on line offset %d, name %s\n", gpiod_line_offset(line), gpiod_line_name(line));
             }
         }
-
-        // Call user function.
-        logInfo("Calling user function\n");
 #endif
         pthread_mutex_lock(&GPIODInterrupt.intMutex);
         if (GPIODInterrupt.interruptsEnabled)

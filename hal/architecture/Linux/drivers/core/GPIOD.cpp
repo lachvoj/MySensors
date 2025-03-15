@@ -38,14 +38,14 @@ void GPIODClass::pinMode(uint8_t pin, uint8_t mode)
 {
     if (pin >= GPIOD_MAX_LINE_DEFINITIONS)
     {
-        logError("GPIODClass::pinMode: Pin number too big: %d >= %d", pin, GPIOD_MAX_LINE_DEFINITIONS);
+        logError("GPIODClass::pinMode: Pin number too big: %d >= %d\n", pin, GPIOD_MAX_LINE_DEFINITIONS);
         return;
     }
 
     if (gpiod_lines[pin] != NULL)
     {
 #ifdef MY_DEBUG_VERBOSE_CORE
-        logWarning("GPIODClass::pinMode: Pin %d was already reserved.", pin);
+        logWarning("GPIODClass::pinMode: Pin %d was already reserved.\n", pin);
 #endif
         gpiod_line_release(gpiod_lines[pin]);
     }
@@ -56,7 +56,7 @@ void GPIODClass::pinMode(uint8_t pin, uint8_t mode)
         int reqRet = gpiod_line_request_output(gpiod_lines[pin], "mysgw", 0);
         if (reqRet != 0)
         {
-            logError("GPIODClass::pinMode: Failure gpiod_line_request_output for pin %d", pin);
+            logError("GPIODClass::pinMode: Failure gpiod_line_request_output for pin %d\n", pin);
             exit(1);
         }
     }
@@ -64,7 +64,7 @@ void GPIODClass::pinMode(uint8_t pin, uint8_t mode)
     {
         if (gpiod_line_request_input(gpiod_lines[pin], "mysgw") != 0)
         {
-            logError("GPIODClass::pinMode: Failure gpiod_line_request_input for pin %d", pin);
+            logError("GPIODClass::pinMode: Failure gpiod_line_request_input for pin %d\n", pin);
             exit(1);
         }
     }
@@ -78,7 +78,7 @@ void GPIODClass::digitalWrite(uint8_t pin, uint8_t value)
     }
     if (gpiod_line_set_value(gpiod_lines[pin], value) != 0)
     {
-        logError("GPIODClass::digitalWrite: Failure setting pin %d to value %d", pin, value);
+        logError("GPIODClass::digitalWrite: Failure setting pin %d to value %d\n", pin, value);
         exit(1);
     }
 }
@@ -93,7 +93,7 @@ uint8_t GPIODClass::digitalRead(uint8_t pin)
     value = gpiod_line_get_value(gpiod_lines[pin]);
     if (value > 1)
     {
-        logError("GPIODClass::digitalRead: Failure getting value from pin %d", pin);
+        logError("GPIODClass::digitalRead: Failure getting value from pin %d\n", pin);
         exit(1);
     }
 
