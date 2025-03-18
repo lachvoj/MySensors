@@ -67,13 +67,13 @@
 #if defined(MY_RADIO_RFM95)
 #error Receive message buffering not supported for RFM95!
 #endif
+#if defined(MY_RADIO_SX126x)
+#error Receive message buffering not supported for RS485!
+#endif
 #if defined(MY_RS485)
 #error Receive message buffering not supported for RS485!
 #endif
 #if defined(MY_PJON)
-#error Receive message buffering not supported for RS485!
-#endif
-#if defined(MY_RADIO_SX126x)
 #error Receive message buffering not supported for RS485!
 #endif
 #if defined(MY_CAN)
@@ -110,6 +110,9 @@ typedef enum {
 #endif
 #if defined(MY_RADIO_NRF5_ESB)
 	TRANSPORT_NRF5_ESB_CHANNEL_ID,  //!< TRANSPORT_NRF5_ESB_CHANNEL_ID
+#endif
+#if defined(MY_RADIO_SX126x)
+	TRANSPORT_SX126x_CHANNEL_ID,     //!< TRANSPORT_SX126x_CHANNEL_ID
 #endif
 #if defined(MY_RS485)
 	TRANSPORT_RS485_CHANNEL_ID,     //!< TRANSPORT_RS485_CHANNEL_ID

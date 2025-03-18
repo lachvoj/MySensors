@@ -148,6 +148,9 @@ bool transportHALInit(void)
 #if defined(MY_RADIO_NRF5_ESB)
 	result &= NRF5_ESB_transportInit();
 #endif
+#if defined(MY_RADIO_SX126x)
+	result &= SX126x_transportInit();
+#endif
 #if defined(MY_RS485)
 	result &= RS485_transportInit();
 #endif
@@ -180,6 +183,9 @@ void transportHALHandler(void)
 #if defined(MY_RADIO_NRF5_ESB)
 	NRF5_ESB_transportTask();
 #endif
+#if defined(MY_RADIO_SX126x)
+	result &= SX126x_transportTask();
+#endif
 #if defined(MY_RS485)
 	RS485_transportTask();
 #endif
@@ -206,6 +212,9 @@ void transportHALSetAddress(const uint8_t address)
 #if defined(MY_RADIO_NRF5_ESB)
 	NRF5_ESB_transportSetAddress(address);
 #endif
+#if defined(MY_RADIO_SX126x)
+	SX126x_transportSetAddress();
+#endif
 #if defined(MY_RS485)
 	RS485_transportSetAddress(address);
 #endif
@@ -231,6 +240,8 @@ uint8_t transportHALGetAddress(void)
 	result = RFM95_transportGetAddress();
 #elif defined(MY_RADIO_NRF5_ESB)
 	result = NRF5_ESB_transportGetAddress();
+#elif defined(MY_RADIO_SX126x)
+	result = SX126x_transportGetAddress();
 #elif defined(MY_RS485)
 	result = RS485_transportGetAddress();
 #elif defined(MY_PJON)
@@ -257,6 +268,8 @@ bool transportHALDataAvailable(void)
 	result = RFM95_transportDataAvailable();
 #elif  defined(MY_RADIO_NRF5_ESB)
 	result = NRF5_ESB_transportDataAvailable();
+#elif  defined(MY_RADIO_SX126x)
+	result = SX126x_transportDataAvailable();
 #elif  defined(MY_RS485)
 	result = RS485_transportDataAvailable();
 #elif defined(MY_PJON)
@@ -289,6 +302,9 @@ bool transportHALSanityCheck(void)
 #endif
 #if defined(MY_RADIO_NRF5_ESB)
 	result &= NRF5_ESB_transportSanityCheck();
+#endif
+#if defined(MY_RADIO_SX126x)
+	result &= SX126x_transportSanityCheck();
 #endif
 #if defined(MY_RS485)
 	result &= RS485_transportSanityCheck();
@@ -323,6 +339,8 @@ bool transportHALReceive(MyMessage *inMsg, uint8_t *msgLength)
 	payloadLength = RFM95_transportReceive((void *)&inMsg->last, MAX_MESSAGE_SIZE);
 #elif defined(MY_RADIO_NRF5_ESB)
 	payloadLength = NRF5_ESB_transportReceive((void *)&inMsg->last, MAX_MESSAGE_SIZE);
+#elif defined(MY_RADIO_SX126x)
+	payloadLength = SX126x_transportReceive((void *)&inMsg->last, MAX_MESSAGE_SIZE);
 #elif defined(MY_RS485)
 	payloadLength = RS485_transportReceive((void *)&inMsg->last, MAX_MESSAGE_SIZE);
 #elif defined(MY_PJON)
@@ -369,7 +387,6 @@ bool transportHALReceive(MyMessage *inMsg, uint8_t *msgLength)
 
 	return true;
 }
-
 
 bool transportHALSend(const uint8_t nextRecipient, const MyMessage *outMsg, uint8_t len,
                       const bool noACK)
@@ -420,6 +437,13 @@ bool transportHALSend(const uint8_t nextRecipient, const MyMessage *outMsg, uint
 		                                 noACK);
 	}
 #endif
+#if defined(MY_RADIO_SX126x)
+	// cppcheck-suppress knownConditionTrueFalse
+	if (channel == TRANSPORT_SX126x_CHANNEL_ID || channel == TRANSPORT_ALL_CHANNEL_ID) {
+		result &= SX126x_transportSend(nextRecipient, (void *)&outMsg->last, len,
+		                                 noACK);
+	}
+#endif
 #if defined(MY_RS485)
 	// cppcheck-suppress knownConditionTrueFalse
 	if (channel == TRANSPORT_RS485_CHANNEL_ID || channel == TRANSPORT_ALL_CHANNEL_ID) {
@@ -467,6 +491,9 @@ int16_t transportHALGetSendingRSSI(void)
 #if defined(MY_RADIO_NRF5_ESB)
 	return NRF5_ESB_transportGetSendingRSSI();
 #endif
+#if defined(MY_RADIO_SX126x)
+	return = SX126x_transportGetSendingRSSI();
+#endif
 #if defined(MY_RS485)
 	return RS485_transportGetSendingRSSI();
 #endif
@@ -494,6 +521,9 @@ int16_t transportHALGetReceivingRSSI(void)
 #endif
 #if defined(MY_RADIO_NRF5_ESB)
 	return NRF5_ESB_transportGetReceivingRSSI();
+#endif
+#if defined(MY_RADIO_SX126x)
+	return = SX126x_transportGetReceivingRSSI();
 #endif
 #if defined(MY_RS485)
 	return RS485_transportGetReceivingRSSI();
@@ -523,6 +553,9 @@ int16_t transportHALGetSendingSNR(void)
 #if defined(MY_RADIO_NRF5_ESB)
 	return NRF5_ESB_transportGetSendingSNR();
 #endif
+#if defined(MY_RADIO_SX126x)
+	return = SX126x_transportGetSendingSNR();
+#endif
 #if defined(MY_RS485)
 	return RS485_transportGetSendingSNR();
 #endif
@@ -550,6 +583,9 @@ int16_t transportHALGetReceivingSNR(void)
 #endif
 #if defined(MY_RADIO_NRF5_ESB)
 	return NRF5_ESB_transportGetReceivingSNR();
+#endif
+#if defined(MY_RADIO_SX126x)
+	return = SX126x_transportGetReceivingSNR();
 #endif
 #if defined(MY_RS485)
 	return RS485_transportGetReceivingSNR();
@@ -579,6 +615,9 @@ int16_t transportHALGetTxPowerPercent(void)
 #if defined(MY_RADIO_NRF5_ESB)
 	return NRF5_ESB_transportGetTxPowerPercent();
 #endif
+#if defined(MY_RADIO_SX126x)
+	return = SX126x_transportGetTxPowerPercent();
+#endif
 #if defined(MY_RS485)
 	return RS485_transportGetTxPowerPercent();
 #endif
@@ -606,6 +645,9 @@ bool transportHALSetTxPowerPercent(const uint8_t powerPercent)
 #endif
 #if defined(MY_RADIO_NRF5_ESB)
 	return NRF5_ESB_transportSetTxPowerPercent(powerPercent);
+#endif
+#if defined(MY_RADIO_SX126x)
+	return = SX126x_transportSetTxPowerPercent(powerPercent);
 #endif
 #if defined(MY_RS485)
 	return RS485_transportSetTxPowerPercent(powerPercent);
@@ -636,6 +678,9 @@ int16_t transportHALGetTxPowerLevel(void)
 #if defined(MY_RADIO_NRF5_ESB)
 	return NRF5_ESB_transportGetTxPowerLevel();
 #endif
+#if defined(MY_RADIO_SX126x)
+	return = SX126x_transportGetTxPowerLevel();
+#endif
 #if defined(MY_RS485)
 	return RS485_transportGetTxPowerLevel();
 #endif
@@ -663,17 +708,19 @@ void transportHALPowerDown(void)
 #if defined(MY_RADIO_NRF5_ESB)
 	NRF5_ESB_transportPowerDown();
 #endif
+#if defined(MY_RADIO_SX126x)
+	SX126x_transportPowerDown();
+#endif
 #if defined(MY_RS485)
 	RS485_transportPowerDown();
 #endif
 #if defined(MY_PJON)
-	return PJON_transportPowerDown();
+	PJON_transportPowerDown();
 #endif
 #if defined(MY_CAN)
-	return CAN_transportPowerDown();
+	CAN_transportPowerDown();
 #endif
 }
-
 
 void transportHALPowerUp(void)
 {
@@ -688,6 +735,9 @@ void transportHALPowerUp(void)
 #endif
 #if defined(MY_RADIO_NRF5_ESB)
 	NRF5_ESB_transportPowerUp();
+#endif
+#if defined(MY_RADIO_SX126x)
+	SX126x_transportPowerUp();
 #endif
 #if defined(MY_RS485)
 	RS485_transportPowerUp();
@@ -714,14 +764,17 @@ void transportHALSleep(void)
 #if defined(MY_RADIO_NRF5_ESB)
 	NRF5_ESB_transportSleep();
 #endif
+#if defined(MY_RADIO_SX126x)
+	SX126x_transportSleep();
+#endif
 #if defined(MY_RS485)
 	RS485_transportSleep();
 #endif
 #if defined(MY_PJON)
-	return PJON_transportSleep();
+	PJON_transportSleep();
 #endif
 #if defined(MY_CAN)
-	return CAN_transportSleep();
+	CAN_transportSleep();
 #endif
 }
 
@@ -739,13 +792,16 @@ void transportHALStandBy(void)
 #if defined(MY_RADIO_NRF5_ESB)
 	NRF5_ESB_transportStandBy();
 #endif
+#if defined(MY_RADIO_SX126x)
+	SX126x_transportStandBy();
+#endif
 #if defined(MY_RS485)
 	RS485_transportStandBy();
 #endif
 #if defined(MY_PJON)
-	return PJON_transportStandBy();
+	PJON_transportStandBy();
 #endif
 #if defined(MY_CAN)
-	return CAN_transportStandBy();
+	CAN_transportStandBy();
 #endif
 }
