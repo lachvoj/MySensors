@@ -24,6 +24,12 @@ GATEWAY_BIN=mysgw
 GATEWAY=$(BINDIR)/$(GATEWAY_BIN)
 GATEWAY_C_SOURCES=$(wildcard hal/architecture/Linux/drivers/core/*.c)
 GATEWAY_CPP_SOURCES=$(wildcard hal/architecture/Linux/drivers/core/*.cpp) examples_linux/mysgw.cpp
+
+# Filter out GPIOD files if not building on Raspberry Pi (when LINUX_GPIOD is not defined)
+ifeq (,$(findstring LINUX_GPIOD,$(CPPFLAGS)))
+    GATEWAY_CPP_SOURCES:=$(filter-out %GPIOD.cpp %GPIODInterrupt.cpp,$(GATEWAY_CPP_SOURCES))
+endif
+
 GATEWAY_OBJECTS=$(patsubst %.c,$(BUILDDIR)/%.o,$(GATEWAY_C_SOURCES)) $(patsubst %.cpp,$(BUILDDIR)/%.o,$(GATEWAY_CPP_SOURCES))
 
 INCLUDES=-I. -I./core -I./hal/architecture/Linux/drivers/core
