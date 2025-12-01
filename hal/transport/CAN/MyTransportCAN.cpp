@@ -644,6 +644,8 @@ void CAN_transportTask(void)
 
 uint8_t CAN_transportReceive(void *data, const uint8_t maxBufSize)
 {
+    (void)maxBufSize;
+
     CAN_Slot_t *slot = _getOldestReadySlot();
 
     if (slot == nullptr)

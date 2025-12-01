@@ -418,7 +418,7 @@ bool gatewayTransportAvailable(void)
 			}
 			//check if there are any new clients
 			if (_ethernetServer.hasClient()) {
-				clients[i] = _ethernetServer.accept();
+				clients[i] = _ethernetServer.available();
 				inputString[i].idx = 0;
 				GATEWAY_DEBUG(PSTR("GWT:TSA:C=%" PRIu8 ",CONNECTED\n"), i);
 				gatewayTransportSend(buildGw(_msgTmp, I_GATEWAY_READY).set(MSG_GW_STARTUP_COMPLETE));
@@ -433,7 +433,7 @@ bool gatewayTransportAvailable(void)
 	if (allSlotsOccupied && _ethernetServer.hasClient()) {
 		//no free/disconnected spot so reject
 		GATEWAY_DEBUG(PSTR("!GWT:TSA:NO FREE SLOT\n"));
-		EthernetClient c = _ethernetServer.accept();
+		EthernetClient c = _ethernetServer.available();
 		c.stop();
 	}
 	// Loop over clients connect and read available data

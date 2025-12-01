@@ -87,6 +87,10 @@ CANDEVClass::~CANDEVClass()
 
 uint8_t CANDEVClass::begin(uint8_t idmodeset, uint8_t speedset, uint8_t clockset)
 {
+    (void)idmodeset;
+    (void)speedset;
+    (void)clockset;
+
     if (_s >= 0)
     {
 #if defined(__linux__) && defined(MY_LINUX_EPOLL)
@@ -296,6 +300,8 @@ uint8_t CANDEVClass::abortTX(void)
 
 uint8_t CANDEVClass::setGPO(uint8_t data)
 {
+    (void)data;
+
     return 0;
 }
 
