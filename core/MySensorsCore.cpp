@@ -234,8 +234,16 @@ void _registerNode(void)
 #endif
 }
 
+
 void presentNode(void)
 {
+	// Guard flag to prevent recursive presentNode() calls during signing handshake
+	static bool _presentNodeInProgress = false;
+	if (_presentNodeInProgress) {
+		return;
+	}
+	_presentNodeInProgress = true;
+	
 	setIndication(INDICATION_PRESENT);
 	// Present node and request config
 #if defined(MY_GATEWAY_FEATURE)
@@ -274,6 +282,8 @@ void presentNode(void)
 	if (presentation) {
 		presentation();
 	}
+	
+	_presentNodeInProgress = false;
 }
 
 

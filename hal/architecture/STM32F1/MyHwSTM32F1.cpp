@@ -124,8 +124,34 @@ int8_t hwSleep(
     return MY_SLEEP_NOT_POSSIBLE;
 }
 
+static void adc_init_clock(ADC_TypeDef *dev)
+{
+    if (dev == ADC1)
+    {
+        if (!(RCC->APB2ENR & RCC_APB2ENR_ADC1EN))
+        {
+            RCC->APB2ENR |= RCC_APB2ENR_ADC1EN;
+            // Enable ADC
+            dev->CR2 |= ADC_CR2_ADON;
+        }
+    }
+#ifdef ADC2
+    else if (dev == ADC2)
+    {
+        if (!(RCC->APB2ENR & RCC_APB2ENR_ADC2EN))
+        {
+            RCC->APB2ENR |= RCC_APB2ENR_ADC2EN;
+            // Enable ADC
+            dev->CR2 |= ADC_CR2_ADON;
+        }
+    }
+#endif
+}
+
 uint16_t adc_read(ADC_TypeDef *dev, uint8_t channel)
 {
+    adc_init_clock(dev);
+    
     uint32_t tmp = dev->SQR1;
     tmp &= ~ADC_SQR1_L;
     tmp |= 0 << 20;
@@ -141,18 +167,21 @@ uint16_t adc_read(ADC_TypeDef *dev, uint8_t channel)
 
 void adc_calibrate(ADC_TypeDef *dev)
 {
+    adc_init_clock(dev);
+    
     dev->CR2 |= ADC_CR2_RSTCAL;
     while (dev->CR2 & ADC_CR2_RSTCAL)
         ;
 
-    dev->CR2 |= ADC_CR2_RSTCAL;
-    while (dev->CR2 & ADC_CR2_RSTCAL)
+    dev->CR2 |= ADC_CR2_CAL;
+    while (dev->CR2 & ADC_CR2_CAL)
         ;
 }
 
 void hwRandomNumberInit(void)
 {
     // use internal temperature sensor as noise source
+    adc_init_clock(ADC1);
     ADC1->CR2 |= ADC_CR2_TSVREFE;
     ADC1->SMPR1 |= ADC_SMPR1_SMP16;
 
@@ -186,6 +215,7 @@ bool hwUniqueID(unique_id_t *uniqueID)
 
 uint16_t hwCPUVoltage(void)
 {
+    adc_init_clock(ADC1);
     ADC1->CR2 |= ADC_CR2_TSVREFE;  // enable VREFINT and temp sensor
     ADC1->SMPR1 = ADC_SMPR1_SMP17; // sample rate for VREFINT ADC channel
     adc_calibrate(ADC1);
@@ -202,6 +232,7 @@ uint16_t hwCPUFrequency(void)
 
 int8_t hwCPUTemperature(void)
 {
+    adc_init_clock(ADC1);
     ADC1->CR2 |= ADC_CR2_TSVREFE; // enable VREFINT and Temperature sensor
     ADC1->SMPR1 |= ADC_SMPR1_SMP16 | ADC_SMPR1_SMP17;
     adc_calibrate(ADC1);

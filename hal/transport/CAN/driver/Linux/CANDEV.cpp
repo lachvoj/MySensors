@@ -129,7 +129,11 @@ uint8_t CANDEVClass::begin(uint8_t idmodeset, uint8_t speedset, uint8_t clockset
     if (fcntl(_s, F_SETFL, fileFlags | O_NONBLOCK) < 0)
         return CAN_FAILINIT;
 
-    int loopback = 0;
+#ifdef MY_CAN_CANDEV_LOOPBACK
+    int loopback = 1;  // Enable loopback for testing/debugging (e.g., vcan)
+#else
+    int loopback = 0;  // Disable loopback for production (default)
+#endif
     if (setsockopt(_s, SOL_CAN_RAW, CAN_RAW_LOOPBACK, &loopback, sizeof(loopback)) < 0)
         return CAN_FAILINIT;
 
