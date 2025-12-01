@@ -1,6 +1,6 @@
 #include "MyTransportCAN.h"
 
-#if defined(ARDUINO_ARCH_STM32F1) && !defined(MCP_CAN)
+#if defined(ARDUINO_ARCH_STM32) && !defined(MCP_CAN)
 #include "driver/STM32Fx/STM32FxCAN.cpp"
 STM32FxCAN CAN0;
 #elif defined(__linux__) && defined(MY_CAN_LINUX_CANDEV)
@@ -143,7 +143,7 @@ static inline void _moveFromSearchToOldestReadyList(CAN_Slot_t *slot)
 }
 #endif
 
-#if defined(ARDUINO_ARCH_STM32F1) && !defined(MCP_CAN)
+#if defined(ARDUINO_ARCH_STM32) && !defined(MCP_CAN)
 bool _initFilters()
 {
     if (!canInitialized)
@@ -531,7 +531,7 @@ bool CAN_transportDataAvailable(void)
     long unsigned int rxId;
     uint8_t len = 0;
     uint8_t rxBuf[CAN_MAX_CHAR_IN_MESSAGE];
-#if defined(ARDUINO_ARCH_STM32F1) && !defined(MCP_CAN)
+#if defined(ARDUINO_ARCH_STM32) && !defined(MCP_CAN)
     while (CAN0.checkReceive())
     {
         CAN0.readMsgBuf(&rxId, &len, rxBuf); // Read data: len = data length, buf = data byte(s)
