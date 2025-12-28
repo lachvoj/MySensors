@@ -352,18 +352,13 @@
 #define MY_CAN_CLOCK MCP_8MHZ
 #endif
 /**
- * @def MY_CAN_MAX_MSG_ID_SEND_DELAY_MS
- * @brief define this if wait defined amout of time to give time for receiver to process sent messages
- * because otherwise it will get new messages with same message ID which could lead to rewriting messages.
- */
-// #define MY_CAN_MAX_MSG_ID_SEND_DELAY_MS 1000
-/**
  * @def MY_CAN_BUF_SIZE
  * @brief assemble buffer size. Since long messages can be sliced and arrive mixed with other messages, assemble buffer
  * is required. For gateway suggested size is at least as count of connected sensors.
+ * Default of 16 slots uses ~900 bytes RAM on 32-bit systems.
  */
 #ifndef MY_CAN_BUF_SIZE
-#define MY_CAN_BUF_SIZE (32u)
+#define MY_CAN_BUF_SIZE (16u)
 #endif
 /**
  * @def MY_CAN_SLOT_MAX_AGE_MS
@@ -443,7 +438,7 @@
  *
  * Use transportGetErrorLogEntry() to read logged errors.
  */
-#define MY_TRANSPORT_ERROR_LOG
+// #define MY_TRANSPORT_ERROR_LOG
 
 /**
  * @def MY_TRANSPORT_ERROR_LOG_SIZE

@@ -25,14 +25,11 @@
 
 #if defined(ARDUINO)
 #include <Arduino.h>
+#elif defined(__linux__)
+// Linux: millis() is provided by MySensors' Arduino compatibility layer
+// (hal/architecture/Linux/drivers/core/Arduino.h)
 #else
-// For Linux/native builds
-#include <sys/time.h>
-static inline uint32_t micros(void) {
-    struct timeval tv;
-    gettimeofday(&tv, NULL);
-    return (uint32_t)(tv.tv_sec * 1000000UL + tv.tv_usec);
-}
+#error "Unsupported platform for MY_TRANSPORT_ERROR_LOG"
 #endif
 
 // Ring buffer storage
@@ -43,7 +40,7 @@ static uint32_t _totalErrorCount = 0;   // Total errors logged (including overwr
 
 void transportLogError(uint8_t errorCode, uint8_t channel, uint8_t extra)
 {
-    _errorLog[_errorLogHead].timestamp = micros();
+    _errorLog[_errorLogHead].timestamp = millis();
     _errorLog[_errorLogHead].errorCode = errorCode;
     _errorLog[_errorLogHead].channel = channel;
     _errorLog[_errorLogHead].extra = extra;

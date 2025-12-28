@@ -124,7 +124,7 @@ extern "C" {
  * @brief Error log entry structure
  */
 typedef struct {
-    uint32_t timestamp;     // micros() when error occurred
+    uint32_t timestamp;     // milis() when error occurred
     uint8_t errorCode;      // Error code from TSP_ERR_* defines
     uint8_t channel;        // Transport channel (transportChannelID_t)
     uint8_t extra;          // Extra info (TEC, REC, frame#, nodeId, etc.)
@@ -166,7 +166,7 @@ uint8_t transportGetLastError(void);
 
 /**
  * @brief Get timestamp of most recent error
- * @return Timestamp in micros() or 0 if no errors
+ * @return Timestamp in millis() or 0 if no errors
  */
 uint32_t transportGetLastErrorTimestamp(void);
 
