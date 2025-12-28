@@ -363,14 +363,23 @@
  * is required. For gateway suggested size is at least as count of connected sensors.
  */
 #ifndef MY_CAN_BUF_SIZE
-#define MY_CAN_BUF_SIZE (8u)
+#define MY_CAN_BUF_SIZE (32u)
 #endif
 /**
  * @def MY_CAN_SLOT_MAX_AGE_MS
- * @brief maximum age of valid slot (ms).
+ * @brief maximum age of valid slot (ms). Incomplete messages older than this are dropped.
+ * Lower values recover faster from lost frames but may drop slow multi-frame messages.
  */
 #ifndef MY_CAN_SLOT_MAX_AGE_MS
-#define MY_CAN_SLOT_MAX_AGE_MS 10000
+#define MY_CAN_SLOT_MAX_AGE_MS 500
+#endif
+/**
+ * @def MY_CAN_SEND_RETRIES
+ * @brief Number of retries for sending a CAN frame before giving up.
+ * Each retry includes error recovery attempt if bus errors are detected.
+ */
+#ifndef MY_CAN_SEND_RETRIES
+#define MY_CAN_SEND_RETRIES (3u)
 #endif
 /**
  * @def MY_CAN_FAST_SLOT_ACCESS
@@ -416,6 +425,37 @@
 #endif
 #endif
 #endif
+
+/**
+ * @defgroup TransportErrorLogGrpPub Transport Error Logging
+ * @ingroup TransportSettingGrpPub
+ * @brief These options control transport error logging capabilities.
+ * @{
+ */
+
+/**
+ * @def MY_TRANSPORT_ERROR_LOG
+ * @brief Enable transport error logging ring buffer.
+ *
+ * When defined, transports can log errors to an internal ring buffer that can be
+ * queried for debugging or reporting purposes. Each entry stores timestamp,
+ * error code, transport channel, and an extra info byte.
+ *
+ * Use transportGetErrorLogEntry() to read logged errors.
+ */
+#define MY_TRANSPORT_ERROR_LOG
+
+/**
+ * @def MY_TRANSPORT_ERROR_LOG_SIZE
+ * @brief Size of the transport error log ring buffer (number of entries).
+ *
+ * Each entry uses 8 bytes, so 16 entries = 128 bytes RAM.
+ * Only relevant if MY_TRANSPORT_ERROR_LOG is defined.
+ */
+#ifndef MY_TRANSPORT_ERROR_LOG_SIZE
+#define MY_TRANSPORT_ERROR_LOG_SIZE 16
+#endif
+/** @}*/ // End of TransportErrorLogGrpPub
 
 /**
  * @defgroup RF24SettingGrpPub RF24

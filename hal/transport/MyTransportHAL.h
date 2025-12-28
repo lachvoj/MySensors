@@ -47,6 +47,7 @@
 #define MyTransportHAL_h
 
 #include "drivers/CircularBuffer/CircularBuffer.h"
+#include "MyTransportErrors.h"
 
 #define RX_QUEUE_MAX_MSG_LENGTH 32	//!< RX_QUEUE_MAX_MSG_LENGTH
 #define RX_QUEUE_BUFFER_SIZE 8			//!< RX_QUEUE_BUFFER_SIZE

@@ -386,6 +386,11 @@ MY_DEFAULT_RX_LED_PIN in your sketch instead to enable LEDs
 #include "hal/transport/MyTransportEncryption.cpp"
 #endif
 
+// Transport error logging (optional, compile-time enabled)
+#if defined(MY_TRANSPORT_ERROR_LOG)
+#include "hal/transport/MyTransportErrors.cpp"
+#endif
+
 // Transport drivers
 #if defined(MY_RADIO_RF24)
 #include "hal/transport/RF24/driver/RF24.cpp"
