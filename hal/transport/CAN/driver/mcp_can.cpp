@@ -28,6 +28,11 @@
 #define MCP_SPI hwSPI //!< default SPI
 #endif
 
+#if defined(ARDUINO_ARCH_AVR)
+#define MCSP_SPI_TRANSFERN(buf, len) MCP_SPI.transfer(buf, len)
+#else
+#define MCSP_SPI_TRANSFERN(buf, len) MCSP_SPI_TRANSFERN(buf, len)
+#endif
 
 /*********************************************************************************************************
 ** Function name:           mcp2515_reset
@@ -51,8 +56,8 @@ INT8U MCP_CAN::mcp2515_readRegister(const INT8U address)
 {
     MCP_SPI.beginTransaction(SPISettings());
     MCP2515_SELECT();
-    char buf[3] = {MCP_READ, address, 0x00};
-    MCP_SPI.transfern(buf, 3);
+    INT8U buf[3] = {MCP_READ, address, 0x00};
+    MCSP_SPI_TRANSFERN(buf, 3);
     MCP2515_UNSELECT();
     MCP_SPI.endTransaction();
 
@@ -65,7 +70,7 @@ INT8U MCP_CAN::mcp2515_readRegister(const INT8U address)
 *********************************************************************************************************/
 void MCP_CAN::mcp2515_readRegisterS(const INT8U address, INT8U values[], const INT8U n)
 {
-    char buf[130];
+    INT8U buf[130];
     memset(buf, 0, 130);
     buf[0] = MCP_READ;
     buf[1] = address;
@@ -73,7 +78,7 @@ void MCP_CAN::mcp2515_readRegisterS(const INT8U address, INT8U values[], const I
     MCP_SPI.beginTransaction(SPISettings());
     MCP2515_SELECT();
     // mcp2515 has auto-increment of address-pointer
-    MCP_SPI.transfern(buf, n + 2);
+    MCSP_SPI_TRANSFERN(buf, n + 2);
     MCP2515_UNSELECT();
     MCP_SPI.endTransaction();
     memcpy(values, &buf[2], n);
@@ -85,11 +90,11 @@ void MCP_CAN::mcp2515_readRegisterS(const INT8U address, INT8U values[], const I
 *********************************************************************************************************/
 void MCP_CAN::mcp2515_setRegister(const INT8U address, const INT8U value)
 {
-    char buf[3] = {MCP_WRITE, address, value};
+    INT8U buf[3] = {MCP_WRITE, address, value};
 
     MCP_SPI.beginTransaction(SPISettings());
     MCP2515_SELECT();
-    MCP_SPI.transfern(buf, 3);
+    MCSP_SPI_TRANSFERN(buf, 3);
     MCP2515_UNSELECT();
     MCP_SPI.endTransaction();
 }
@@ -100,14 +105,14 @@ void MCP_CAN::mcp2515_setRegister(const INT8U address, const INT8U value)
 *********************************************************************************************************/
 void MCP_CAN::mcp2515_setRegisterS(const INT8U address, const INT8U values[], const INT8U n)
 {
-    char buf[130];
+    INT8U buf[130];
     buf[0] = MCP_WRITE;
     buf[1] = address;
     memcpy(&buf[2], values, n);
 
     MCP_SPI.beginTransaction(SPISettings());
     MCP2515_SELECT();
-	MCP_SPI.transfern(buf, n + 2);
+	MCSP_SPI_TRANSFERN(buf, n + 2);
     MCP2515_UNSELECT();
     MCP_SPI.endTransaction();
 }
@@ -118,11 +123,11 @@ void MCP_CAN::mcp2515_setRegisterS(const INT8U address, const INT8U values[], co
 *********************************************************************************************************/
 void MCP_CAN::mcp2515_modifyRegister(const INT8U address, const INT8U mask, const INT8U data)
 {
-    char buf[4] = {MCP_BITMOD, address, mask, data};
+    INT8U buf[4] = {MCP_BITMOD, address, mask, data};
 
     MCP_SPI.beginTransaction(SPISettings());
     MCP2515_SELECT();
-    MCP_SPI.transfern(buf, 4);
+    MCSP_SPI_TRANSFERN(buf, 4);
     MCP2515_UNSELECT();
     MCP_SPI.endTransaction();
 }
@@ -133,11 +138,11 @@ void MCP_CAN::mcp2515_modifyRegister(const INT8U address, const INT8U mask, cons
 *********************************************************************************************************/
 INT8U MCP_CAN::mcp2515_readStatus(void)                             
 {
-    char buf[2] = {MCP_READ_STATUS, 0x00};
+    INT8U buf[2] = {MCP_READ_STATUS, 0x00};
 
     MCP_SPI.beginTransaction(SPISettings());
     MCP2515_SELECT();
-    MCP_SPI.transfern(buf, 2);
+    MCSP_SPI_TRANSFERN(buf, 2);
     MCP2515_UNSELECT();
     MCP_SPI.endTransaction();
     return (INT8U)buf[1];
