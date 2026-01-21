@@ -170,6 +170,14 @@ uint16_t hwCPUFrequency(void);
 int8_t hwCPUTemperature(void);
 
 /**
+ * @brief Read analog value from GPIO pin using LL (no HAL ADC)
+ * @param pin Arduino pin number (PA0, PA1, etc.)
+ * @return 12-bit ADC value (0-4095)
+ * @note Uses STM32 LL library, does not link HAL ADC driver
+ */
+uint16_t hwAnalogRead(uint8_t pin);
+
+/**
  * @brief Get free memory (heap)
  * @return Free memory in bytes
  */

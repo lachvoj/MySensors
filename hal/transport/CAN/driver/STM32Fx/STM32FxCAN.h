@@ -16,9 +16,9 @@
 class STM32FxCAN
 {
   private:
-    bool _initialized = false;
-    uint8_t _speed;
-    CAN_TypeDef *_canDev;
+    volatile bool _initialized = false;  // volatile for ISR safety
+    uint8_t _speed = CAN_125KBPS;  // Safe default to avoid uninitialized usage
+    CAN_TypeDef *_canDev = nullptr;
 
     bool isInitialized();
     uint8_t setFilter(uint8_t index, uint8_t scale, uint8_t mode, uint8_t fifo, uint32_t bank1, uint32_t bank2);
@@ -60,7 +60,8 @@ class STM32FxCAN
     uint8_t getGPI(void);                                                          // Reads GPI
     uint8_t enableRxInterrupt(void);
     uint8_t disableRxInterrupt(void);
-    uint8_t attachRxInterrupt(void func());
+    uint8_t attachRxInterrupt(void (*func)(void));                                 // Attach RX interrupt callback
+    static void (*getRxCallback(void))(void);                                      // Get registered RX callback
 };
 
 #endif // STM32FxCAN_h

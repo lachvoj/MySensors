@@ -1,18 +1,59 @@
 #include "STM32FxCAN.h"
 
-#define CAN_EXT_ID_MASK 0x1FFFFFFFU
-#define CAN_STD_ID_MASK 0x000007FFU
-#define STM32_CAN_TIR_TXRQ (1U << 0U) // Bit 0: Transmit Mailbox Request
-#define STM32_CAN_RIR_RTR (1U << 1U)  // Bit 1: Remote Transmission Request
-#define STM32_CAN_RIR_IDE (1U << 2U)  // Bit 2: Identifier Extension
-#define STM32_CAN_TIR_RTR (1U << 1U)  // Bit 1: Remote Transmission Request
-#define STM32_CAN_TIR_IDE (1U << 2U)  // Bit 2: Identifier Extension
+// ============================================================================
+// Most CAN register definitions come from CMSIS headers (stm32f103xb.h):
+//   CAN_MCR_*, CAN_MSR_*, CAN_TSR_*, CAN_RF0R_*, CAN_BTR_*, CAN_FMR_*,
+//   CAN_IER_*, CAN_ESR_*, RCC_APB*ENR_*, AFIO_MAPR_CAN_REMAP_*
+// The following are driver-specific definitions not in CMSIS.
+// ============================================================================
+
+// CAN ID masks (29-bit extended, 11-bit standard)
+#define CAN_EXT_ID_MASK         0x1FFFFFFFU
+#define CAN_STD_ID_MASK         0x000007FFU
+
+// CAN TIR (Transmit Identifier Register) bits - not in CMSIS
+#define STM32_CAN_TIR_TXRQ      (1U << 0U)      // Bit 0: Transmit Mailbox Request
+#define STM32_CAN_TIR_RTR       (1U << 1U)      // Bit 1: Remote Transmission Request
+#define STM32_CAN_TIR_IDE       (1U << 2U)      // Bit 2: Identifier Extension
+
+// CAN RIR (Receive Identifier Register) bits - not in CMSIS
+#define STM32_CAN_RIR_RTR       (1U << 1U)      // Bit 1: Remote Transmission Request
+#define STM32_CAN_RIR_IDE       (1U << 2U)      // Bit 2: Identifier Extension
+
+// Timeout values
+#define CAN_INIT_TIMEOUT        (10000U)        // Init mode timeout iterations
+#define CAN_TX_TIMEOUT_MS       (100U)          // TX timeout in milliseconds
+#define CAN_NORMAL_TIMEOUT_MS   (1000U)         // Normal mode timeout in milliseconds
+
+// Composite mask for clearing BTR timing fields (using CMSIS definitions)
+#define CAN_BTR_TIMING_CLEAR    (CAN_BTR_SJW | CAN_BTR_TS2 | CAN_BTR_TS1 | CAN_BTR_BRP)
+
+// Filter configuration constants
+#define CAN_MAX_FILTER_INDEX    (27U)           // Maximum filter bank index (0-27)
+#define CAN_FILTER_BANK_ALL_CAN1 (28U)          // Assign all 28 filter banks to CAN1
+
+// GPIO configuration values for CAN pins
+// CRH/CRL: 4 bits per pin [CNF1:CNF0:MODE1:MODE0]
+// For TX: AF push-pull, 50MHz = CNF=10, MODE=11 = 0xB
+// For RX: Input with pull-up/down = CNF=10, MODE=00 = 0x8
+#define GPIO_CAN_TX_CONFIG      (0xBUL)         // AF push-pull, 50MHz
+#define GPIO_CAN_RX_CONFIG      (0x8UL)         // Input with pull-up/down
+
+// GPIO pin bit positions in CRH/CRL (4 bits per pin)
+#define GPIO_PIN_POS(pin)       ((pin) * 4U)    // Calculate bit position for pin 0-7
+
+// CAN data length code mask
+#define CAN_DLC_MASK            (0xFUL)         // DLC is 4 bits (0-15, valid 0-8)
+
+// CAN RX interrupt callback (weak symbol approach for C6 fix)
+static void (*_canRxCallback)(void) = nullptr;
 
 STM32FxCAN::STM32FxCAN(uint8_t canDevice)
 {
     switch (canDevice)
     {
     case 1: _canDev = CAN1; break;
+    default: _canDev = CAN1; break;  // Safe default for invalid device number
     }
 }
 
@@ -37,10 +78,10 @@ STM32FxCAN::STM32FxCAN(uint8_t canDevice)
  */
 uint8_t STM32FxCAN::setFilter(uint8_t index, uint8_t scale, uint8_t mode, uint8_t fifo, uint32_t bank1, uint32_t bank2)
 {
-    if (index > 27)
+    if (index > CAN_MAX_FILTER_INDEX)
         return CAN_FAILINIT;
 
-    _canDev->FMR |= 0x1UL; // Set to filter initialization mode
+    _canDev->FMR |= CAN_FMR_FINIT; // Set to filter initialization mode
 
     _canDev->FA1R &= ~(0x1UL << index); // Deactivate filter
 
@@ -75,7 +116,7 @@ uint8_t STM32FxCAN::setFilter(uint8_t index, uint8_t scale, uint8_t mode, uint8_
 
     _canDev->FA1R |= (0x1UL << index); // Activate filter
 
-    _canDev->FMR &= ~(0x1UL); // Deactivate initialization mode
+    _canDev->FMR &= ~CAN_FMR_FINIT; // Deactivate initialization mode
 
     return CAN_OK;
 }
@@ -113,89 +154,69 @@ uint8_t STM32FxCAN::begin(uint8_t idmodeset, uint8_t speedset, uint8_t clockset)
     case CAN_500KBPS: bitrate = 4; break;
     case CAN_1000KBPS: bitrate = 5; break;
 
-    default: return CAN_FAILINIT; break;
+    default: return CAN_FAILINIT;
     }
 
-    RCC->APB1ENR |= 0x2000000UL; // Enable CAN clock
-    RCC->APB2ENR |= 0x1UL;       // Enable AFIO clock
-    AFIO->MAPR &= 0xFFFF9FFF;    // reset CAN remap
-                                 // CAN_RX mapped to PA11, CAN_TX mapped to PA12
+    RCC->APB1ENR |= RCC_APB1ENR_CAN1EN;   // Enable CAN clock
+    RCC->APB2ENR |= RCC_APB2ENR_AFIOEN;   // Enable AFIO clock
+    AFIO->MAPR &= ~AFIO_MAPR_CAN_REMAP;   // Reset CAN remap (PA11/PA12 default)
 
 #if (STM32FxCAN_BUS_TYPE == 0)
     {
-        RCC->APB2ENR |= 0x4UL;      // Enable GPIOA clock
-        GPIOA->CRH &= ~(0xFF000UL); // Configure PA12(0b0000) and PA11(0b0000)
-                                    // 0b0000
-                                    //   MODE=00(Input mode)
-                                    //   CNF=00(Analog mode)
-
-        GPIOA->CRH |= 0xB8FFFUL; // Configure PA12(0b1011) and PA11(0b1000)
-                                 // 0b1011
-                                 //   MODE=11(Output mode, max speed 50 MHz)
-                                 //   CNF=10(Alternate function output Push-pull
-                                 // 0b1000
-                                 //   MODE=00(Input mode)
-                                 //   CNF=10(Input with pull-up / pull-down)
+        RCC->APB2ENR |= RCC_APB2ENR_IOPAEN;  // Enable GPIOA clock
+        // Clear config for PA11 (RX) and PA12 (TX) in CRH (pins 8-15, so PA11=bits 12-15, PA12=bits 16-19)
+        GPIOA->CRH &= ~(0xFFUL << GPIO_PIN_POS(11 - 8));
+        // PA12: TX - AF push-pull 50MHz (0xB), PA11: RX - Input with pull-up/down (0x8)
+        GPIOA->CRH |= (GPIO_CAN_TX_CONFIG << GPIO_PIN_POS(12 - 8)) | (GPIO_CAN_RX_CONFIG << GPIO_PIN_POS(11 - 8));
 
 #if (STM32FxCAN_BUS_PULLUP > 0)
-        GPIOA->ODR |= 0x1UL << 12; // PA12 Upll-up
+        GPIOA->ODR |= (1UL << 12);  // PA12 Pull-up
 #endif
     }
 #endif
 
 #if (STM32FxCAN_BUS_TYPE == 2)
     {
-        AFIO->MAPR |= 0x00004000; // set CAN remap
-                                  // CAN_RX mapped to PB8, CAN_TX mapped to PB9
-                                  // (not available on 36-pin package)
+        AFIO->MAPR |= AFIO_MAPR_CAN_REMAP_REMAP2;  // CAN remap to PB8/PB9 (partial remap)
+                                                    // (not available on 36-pin package)
 
-        RCC->APB2ENR |= 0x8UL;   // Enable GPIOB clock
-        GPIOB->CRH &= ~(0xFFUL); // Configure PB9(0b0000) and PB8(0b0000)
-                                 // 0b0000
-                                 //   MODE=00(Input mode)
-                                 //   CNF=00(Analog mode)
+        RCC->APB2ENR |= RCC_APB2ENR_IOPBEN;  // Enable GPIOB clock
+        // Clear config for PB8 (RX) and PB9 (TX) in CRH (pins 8-15, so PB8=bits 0-3, PB9=bits 4-7)
+        GPIOB->CRH &= ~(0xFFUL << GPIO_PIN_POS(8 - 8));
+        // PB9: TX - AF push-pull 50MHz (0xB), PB8: RX - Input with pull-up/down (0x8)
+        GPIOB->CRH |= (GPIO_CAN_TX_CONFIG << GPIO_PIN_POS(9 - 8)) | (GPIO_CAN_RX_CONFIG << GPIO_PIN_POS(8 - 8));
 
-        GPIOB->CRH |= 0xB8UL; // Configure PB9(0b1011) and PB8(0b1000)
-                              // 0b1011
-                              //   MODE=11(Output mode, max speed 50 MHz)
-                              //   CNF=10(Alternate function output Push-pull
-                              // 0b1000
-                              //   MODE=00(Input mode)
-                              //   CNF=10(Input with pull-up / pull-down)
 #if (STM32FxCAN_BUS_PULLUP > 0)
-        GPIOB->ODR |= 0x1UL << 8; // PB8 Upll-up
+        GPIOB->ODR |= (1UL << 8);  // PB8 Pull-up
 #endif
     }
 #endif
 
 #if (STM32FxCAN_BUS_TYPE == 3)
     {
-        AFIO->MAPR |= 0x00005000; // set CAN remap
-                                  // CAN_RX mapped to PD0, CAN_TX mapped to PD1
-                                  // (available on 100-pin and 144-pin package)
+        AFIO->MAPR |= AFIO_MAPR_CAN_REMAP_REMAP3;  // CAN remap to PD0/PD1 (full remap)
+                                                    // (available on 100-pin and 144-pin package)
 
-        RCC->APB2ENR |= 0x20UL;  // Enable GPIOD clock
-        GPIOD->CRL &= ~(0xFFUL); // Configure PD1(0b0000) and PD0(0b0000)
-                                 // 0b0000
-                                 //   MODE=00(Input mode)
-                                 //   CNF=00(Analog mode)
+        RCC->APB2ENR |= RCC_APB2ENR_IOPDEN;  // Enable GPIOD clock
+        // Clear config for PD0 (RX) and PD1 (TX) in CRL (pins 0-7)
+        GPIOD->CRL &= ~(0xFFUL << GPIO_PIN_POS(0));
+        // PD1: TX - AF push-pull 50MHz (0xB), PD0: RX - Input with pull-up/down (0x8)
+        GPIOD->CRL |= (GPIO_CAN_TX_CONFIG << GPIO_PIN_POS(1)) | (GPIO_CAN_RX_CONFIG << GPIO_PIN_POS(0));
 
-        GPIOD->CRH |= 0xB8UL; // Configure PD1(0b1011) and PD0(0b1000)
-                              // 0b1000
-                              //   MODE=00(Input mode)
-                              //   CNF=10(Input with pull-up / pull-down)
-                              // 0b1011
-                              //   MODE=11(Output mode, max speed 50 MHz)
-                              //   CNF=10(Alternate function output Push-pull
 #if (STM32FxCAN_BUS_PULLUP > 0)
-        GPIOD->ODR |= 0x1UL << 0; // PD0 Upll-up
+        GPIOD->ODR |= (1UL << 0);  // PD0 Pull-up
 #endif
     }
 #endif
 
-    _canDev->MCR |= 0x1UL; // Require CAN1 to Initialization mode
-    while (!(_canDev->MSR & 0x1UL))
-        ; // Wait for Initialization mode
+    _canDev->MCR |= CAN_MCR_INRQ; // Require CAN1 to Initialization mode
+    
+    // Wait for Initialization mode with timeout
+    uint32_t initTimeout = CAN_INIT_TIMEOUT;
+    while (!(_canDev->MSR & CAN_MSR_INAK) && --initTimeout)
+        ;
+    if (initTimeout == 0)
+        return CAN_FAILINIT;  // Timeout waiting for init mode
 
     // Hardware initialization
 
@@ -209,21 +230,22 @@ uint8_t STM32FxCAN::begin(uint8_t idmodeset, uint8_t speedset, uint8_t clockset)
 
     // 0x04UL Tx FIFO priority by request order
 
-    _canDev->MCR = (0x01UL | 0x40UL | 0x04UL);
+    _canDev->MCR = (CAN_MCR_INRQ | CAN_MCR_ABOM | CAN_MCR_TXFP);
 
-    // Set bit rates
-    _canDev->BTR &= ~(((0x03) << 24) | ((0x07) << 20) | ((0x0F) << 16) | (0x1FF));
-    _canDev->BTR |= (((can_configs[bitrate].TS2 - 1) & 0x07) << 20) | (((can_configs[bitrate].TS1 - 1) & 0x0F) << 16) |
-                    ((can_configs[bitrate].BRP - 1) & 0x1FF);
+    // Set bit rates - clear then set TS2, TS1, and BRP fields
+    _canDev->BTR &= ~CAN_BTR_TIMING_CLEAR;
+    _canDev->BTR |= (((can_configs[bitrate].TS2 - 1) & 0x07) << CAN_BTR_TS2_Pos) | 
+                    (((can_configs[bitrate].TS1 - 1) & 0x0F) << CAN_BTR_TS1_Pos) |
+                    ((can_configs[bitrate].BRP - 1) & CAN_BTR_BRP);
 
     // Configure Filters to default values
-    _canDev->FMR |= 0x1UL;      // Set to filter initialization mode
-    _canDev->FMR &= 0xFFFFC0FF; // Clear CAN2 start bank
+    _canDev->FMR |= CAN_FMR_FINIT;        // Set to filter initialization mode
+    _canDev->FMR &= ~CAN_FMR_CAN2SB;      // Clear CAN2 start bank
 
     // bxCAN has 28 filters.
     // These filters are used for both CAN1 and CAN2.
     // STM32F103 has only CAN1, so all 28 are used for CAN1
-    _canDev->FMR |= 0x1C << 8; // Assign all filters to CAN1
+    _canDev->FMR |= (CAN_FILTER_BANK_ALL_CAN1 << CAN_FMR_CAN2SB_Pos);
 
     // Set filter 0
     // Single 32-bit scale configuration
@@ -232,17 +254,17 @@ uint8_t STM32FxCAN::begin(uint8_t idmodeset, uint8_t speedset, uint8_t clockset)
     // Filter bank register to all 0
     setFilter(0, 1, 0, 0, 0x0UL, 0x0UL);
 
-    _canDev->FMR &= ~(0x1UL); // Deactivate initialization mode
+    _canDev->FMR &= ~CAN_FMR_FINIT; // Deactivate initialization mode
 
-    uint16_t TimeoutMilliseconds = 1000;
+    uint16_t timeoutMs = CAN_NORMAL_TIMEOUT_MS;
     bool can1 = false;
-    _canDev->MCR &= ~(0x01UL); // Require CAN1 to normal mode
+    _canDev->MCR &= ~CAN_MCR_INRQ; // Require CAN1 to normal mode
 
     // Wait for normal mode
     // If the connection is not correct, it will not return to normal mode.
-    for (uint16_t wait_ack = 0; wait_ack < TimeoutMilliseconds; wait_ack++)
+    for (uint16_t wait_ack = 0; wait_ack < timeoutMs; wait_ack++)
     {
-        if ((_canDev->MSR & 0x1UL) == 0)
+        if ((_canDev->MSR & CAN_MSR_INAK) == 0)
         {
             can1 = true;
             break;
@@ -307,34 +329,7 @@ uint8_t STM32FxCAN::sendMsgBuf(uint32_t id, uint8_t ext, uint8_t len, const uint
         return CAN_FAILINIT;
     }
 
-    // get free mailbox
-    uint8_t mbIdx = 0;
-    volatile int count = 0;
-    while (true)
-    {
-        // any of mailboxes becomes empty while loop
-        if (count >= 1000000)
-            return CAN_FAILTX;
-        count++;
-
-        uint8_t tme = ((_canDev->TSR & 0x1C000000UL) >> 26);
-        if ((tme & 0x01U) == 1)
-        {
-            mbIdx = 0;
-            break;
-        }
-        if ((tme & 0x02U) == 2)
-        {
-            mbIdx = 1;
-            break;
-        }
-        if ((tme & 0x04U) == 4)
-        {
-            mbIdx = 2;
-            break;
-        }
-    }
-
+    // Build CAN ID field
     uint32_t out = 0;
     if (ext != 0)
     { // Extended frame format
@@ -351,15 +346,51 @@ uint8_t STM32FxCAN::sendMsgBuf(uint32_t id, uint8_t ext, uint8_t len, const uint
         out |= STM32_CAN_TIR_RTR;
     }
 
-    _canDev->sTxMailBox[mbIdx].TDTR &= ~(0xF);
-    _canDev->sTxMailBox[mbIdx].TDTR |= len & 0xFUL;
+    // Build TX data registers - only read bytes up to len to avoid buffer over-read
+    uint32_t tdlr = 0, tdhr = 0;
+    for (uint8_t i = 0; i < len && i < 4; i++)
+        tdlr |= ((uint32_t)buf[i]) << (i * 8);
+    for (uint8_t i = 4; i < len && i < 8; i++)
+        tdhr |= ((uint32_t)buf[i]) << ((i - 4) * 8);
 
-    _canDev->sTxMailBox[mbIdx].TDLR =
-        (((uint32_t)buf[3] << 24) | ((uint32_t)buf[2] << 16) | ((uint32_t)buf[1] << 8) | ((uint32_t)buf[0]));
-    _canDev->sTxMailBox[mbIdx].TDHR =
-        (((uint32_t)buf[7] << 24) | ((uint32_t)buf[6] << 16) | ((uint32_t)buf[5] << 8) | ((uint32_t)buf[4]));
+    // Wait for free mailbox with timeout
+    // Note: No critical section needed - TX mailboxes are independent from RX,
+    // and only main loop context calls sendMsgBuf() (no ISR sends)
+    uint8_t mbIdx = 0;
+    uint32_t startTime = millis();
+    while (true)
+    {
+        if ((millis() - startTime) >= CAN_TX_TIMEOUT_MS)
+        {
+            return CAN_FAILTX;
+        }
 
-    // Send Go
+        uint8_t tme = ((_canDev->TSR & CAN_TSR_TME) >> CAN_TSR_TME_Pos);
+        if (tme & (CAN_TSR_TME0 >> CAN_TSR_TME_Pos))
+        {
+            mbIdx = 0;
+            break;
+        }
+        if (tme & (CAN_TSR_TME1 >> CAN_TSR_TME_Pos))
+        {
+            mbIdx = 1;
+            break;
+        }
+        if (tme & (CAN_TSR_TME2 >> CAN_TSR_TME_Pos))
+        {
+            mbIdx = 2;
+            break;
+        }
+        
+        // No mailbox free, yield briefly before retry
+        delayMicroseconds(10);
+    }
+
+    // Populate and send - writing TIR with TXRQ atomically claims the mailbox
+    _canDev->sTxMailBox[mbIdx].TDTR &= ~CAN_DLC_MASK;
+    _canDev->sTxMailBox[mbIdx].TDTR |= len & CAN_DLC_MASK;
+    _canDev->sTxMailBox[mbIdx].TDLR = tdlr;
+    _canDev->sTxMailBox[mbIdx].TDHR = tdhr;
     _canDev->sTxMailBox[mbIdx].TIR = out | STM32_CAN_TIR_TXRQ;
 
     return CAN_OK;
@@ -376,8 +407,16 @@ uint8_t STM32FxCAN::sendMsgBuf(uint32_t id, uint8_t len, const uint8_t *buf)
 
 uint8_t STM32FxCAN::readMsgBuf(uint32_t *id, uint8_t *ext, uint8_t *len, uint8_t *buf)
 {
+    // Validate pointers
+    if (!id || !ext || !len || !buf)
+        return CAN_FAILINIT;
+    
     if (!isInitialized())
         return CAN_FAILINIT;
+
+    // Check if FIFO has messages (FMP0 bits)
+    if ((_canDev->RF0R & CAN_RF0R_FMP0) == 0)
+        return CAN_NOMSG;  // FIFO empty
 
     *ext = ((_canDev->sFIFOMailBox[0].RIR & STM32_CAN_RIR_IDE) >> 2);
     if (*ext)
@@ -385,13 +424,21 @@ uint8_t STM32FxCAN::readMsgBuf(uint32_t *id, uint8_t *ext, uint8_t *len, uint8_t
     else
         *id = _canDev->sFIFOMailBox[0].RIR >> 21; // standard id
 
-    *len = (_canDev->sFIFOMailBox[0].RDTR) & 0xFUL;
-    ((uint32_t *)buf)[0] = _canDev->sFIFOMailBox[0].RDLR;
-    ((uint32_t *)buf)[1] = _canDev->sFIFOMailBox[0].RDHR;
+    // Get DLC and clamp to max valid CAN length
+    uint8_t dlc = (_canDev->sFIFOMailBox[0].RDTR) & CAN_DLC_MASK;
+    *len = (dlc > CAN_MAX_CHAR_IN_MESSAGE) ? CAN_MAX_CHAR_IN_MESSAGE : dlc;
+    
+    // Safe byte-by-byte copy to avoid alignment issues and buffer overflow
+    uint32_t rdlr = _canDev->sFIFOMailBox[0].RDLR;
+    uint32_t rdhr = _canDev->sFIFOMailBox[0].RDHR;
+    for (uint8_t i = 0; i < *len && i < 4; i++)
+        buf[i] = (rdlr >> (i * 8)) & 0xFF;
+    for (uint8_t i = 4; i < *len && i < 8; i++)
+        buf[i] = (rdhr >> ((i - 4) * 8)) & 0xFF;
 
     // Release FIFO 0 output mailbox.
     // Make the next incoming message available.
-    _canDev->RF0R |= 0x20UL;
+    _canDev->RF0R |= CAN_RF0R_RFOM0;
 
     return CAN_OK;
 }
@@ -405,12 +452,34 @@ uint8_t STM32FxCAN::readMsgBuf(uint32_t *id, uint8_t *len, uint8_t *buf)
 
 uint8_t STM32FxCAN::checkReceive(void)
 {
-    // Check for pending FIFO 0 messages
-    return _canDev->RF0R & 0x3UL;
+    uint32_t rf0r = _canDev->RF0R;
+    
+    // Check and clear FIFO overflow flag (FOVR0)
+    if (rf0r & CAN_RF0R_FOVR0)
+    {
+        _canDev->RF0R = CAN_RF0R_FOVR0;  // Clear overflow flag by writing 1
+        // Note: One or more messages were lost due to FIFO overflow
+    }
+    
+    // Return pending message count (FMP0 bits)
+    return rf0r & CAN_RF0R_FMP0;
 }
 
 uint8_t STM32FxCAN::checkError(void)
 {
+    uint32_t esr = _canDev->ESR;
+    
+    // Check for critical error conditions:
+    // - BOFF: Bus-off state
+    // - EPVF: Error passive flag  
+    // - EWGF: Error warning flag
+    if (esr & (CAN_ESR_BOFF | CAN_ESR_EPVF | CAN_ESR_EWGF))
+        return 1;
+    
+    // Check for last error code (LEC != 0 means an error occurred)
+    if (esr & CAN_ESR_LEC_Msk)
+        return 1;
+    
     return 0;
 }
 
@@ -431,17 +500,23 @@ uint8_t STM32FxCAN::errorCountTX(void)
 
 uint8_t STM32FxCAN::enOneShotTX(void)
 {
-    return 0;
+    // Enable one-shot mode by setting NART (No Automatic Retransmission) bit
+    _canDev->MCR |= CAN_MCR_NART;
+    return CAN_OK;
 }
 
 uint8_t STM32FxCAN::disOneShotTX(void)
 {
-    return 0;
+    // Disable one-shot mode by clearing NART bit (enable auto retransmission)
+    _canDev->MCR &= ~CAN_MCR_NART;
+    return CAN_OK;
 }
 
 uint8_t STM32FxCAN::abortTX(void)
 {
-    return 0;
+    // Request abort for all three TX mailboxes
+    _canDev->TSR |= (CAN_TSR_ABRQ0 | CAN_TSR_ABRQ1 | CAN_TSR_ABRQ2);
+    return CAN_OK;
 }
 
 uint8_t STM32FxCAN::setGPO(uint8_t data)
@@ -457,28 +532,64 @@ uint8_t STM32FxCAN::getGPI(void)
 uint8_t STM32FxCAN::enableRxInterrupt(void)
 {
     _canDev->IER |= CAN_IER_FMPIE0;
-    return 0;
+    NVIC_SetPriority(USB_LP_CAN1_RX0_IRQn, 5);  // Set appropriate priority
+    NVIC_EnableIRQ(USB_LP_CAN1_RX0_IRQn);
+    return CAN_OK;
 }
 
 uint8_t STM32FxCAN::disableRxInterrupt(void)
 {
+    NVIC_DisableIRQ(USB_LP_CAN1_RX0_IRQn);
     _canDev->IER &= ~(CAN_IER_FMPIE0);
-
-    return 0;
+    return CAN_OK;
 }
 
-#define MMIO32(x) (*(volatile uint32_t *)(x))
-uint8_t STM32FxCAN::attachRxInterrupt(void func())
+/**
+ * @brief Attach a callback function to the CAN RX interrupt
+ * @param func Pointer to the callback function
+ * @return CAN_OK on success
+ * 
+ * @note This function uses a callback pointer approach instead of direct vector
+ *       table manipulation for improved safety. The actual ISR handler
+ *       (USB_LP_CAN1_RX0_IRQHandler) should be defined elsewhere and call
+ *       the registered callback.
+ * 
+ * @warning On STM32F103, the CAN RX interrupt (USB_LP_CAN1_RX0_IRQn) is shared
+ *          with USB LP. If USB is also used, additional handling is required.
+ */
+uint8_t STM32FxCAN::attachRxInterrupt(void (*func)(void))
 {
-    static uint8_t newTbl[0xF0] __attribute__((aligned(0x100)));
-    uint8_t *pNewTbl = newTbl;
-    int origTbl = MMIO32(SCB_BASE + 0x008);
-    for (int j = 0; j < 0x3c; j++) // table length = 60 integers
-        MMIO32((pNewTbl + (j << 2))) = MMIO32((origTbl + (j << 2)));
+    // Register the callback
+    // Note: Single pointer write is atomic on ARM Cortex-M, and this is
+    // typically called during setup before interrupts are enabled anyway
+    _canRxCallback = func;
+    
+    return CAN_OK;
+}
 
-    uint32_t canVectTblAdr = reinterpret_cast<uint32_t>(pNewTbl) + (36 << 2); // calc new ISR addr in new vector tbl
-    MMIO32(canVectTblAdr) = reinterpret_cast<uint32_t>(func);       // set new CAN/USB ISR jump addr into new table
-    MMIO32(SCB_BASE + 0x008) = reinterpret_cast<uint32_t>(pNewTbl); // load vtor register with new tbl location
+/**
+ * @brief Get the registered CAN RX callback function
+ * @return Pointer to the callback function, or nullptr if none registered
+ * 
+ * @note This function can be called from the ISR to invoke the registered callback:
+ * @code
+ * extern "C" void USB_LP_CAN1_RX0_IRQHandler(void) {
+ *     void (*callback)(void) = STM32FxCAN::getRxCallback();
+ *     if (callback) callback();
+ * }
+ * @endcode
+ */
+void (*STM32FxCAN::getRxCallback(void))(void)
+{
+    return _canRxCallback;
+}
 
-    return 0;
+// Provide a weak default ISR that calls the registered callback
+// This can be overridden by user code if needed
+extern "C" __attribute__((weak)) void USB_LP_CAN1_RX0_IRQHandler(void)
+{
+    if (_canRxCallback)
+    {
+        _canRxCallback();
+    }
 }
