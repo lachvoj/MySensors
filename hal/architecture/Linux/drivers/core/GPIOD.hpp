@@ -2,6 +2,7 @@
 #define GPIOD_hpp
 
 #include <stdint.h>
+#include <gpiod.h>
 
 #define INPUT 0
 #define OUTPUT 1
@@ -29,7 +30,11 @@ class GPIODClass
     const char *chipdevname = GPIOD_DEV;
 
   public:
+#ifdef LIBGPIOD_V2
+    struct gpiod_line_request *line_requests[GPIOD_MAX_LINE_DEFINITIONS];
+#else
     struct gpiod_line *gpiod_lines[GPIOD_MAX_LINE_DEFINITIONS];
+#endif
     struct gpiod_chip *chip;
     /**
      * @brief GPIODClass constructor.

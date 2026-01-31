@@ -98,7 +98,7 @@
  * | None         | -
  */
 #if (MY_TRANSPORT_COUNT > 1)
-#define MY_CAP_RADIO "M"
+#define MY_CAP_TRANSPORT "M"
 #else
 #if defined(MY_RADIO_RF24) || defined(MY_RADIO_NRF5_ESB)
 #define MY_CAP_TRANSPORT "N"

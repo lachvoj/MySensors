@@ -22,6 +22,7 @@
 #ifndef interrupt_h
 #define interrupt_h
 
+#include <pthread.h>
 #include <gpiod.h>
 #include <stdint.h>
 
@@ -39,13 +40,20 @@ class GPIODInterruptClass
     {
         void (*func)();
         int pin;
+#ifdef LIBGPIOD_V2
+        struct gpiod_line_request *line_request;
+#else
         struct gpiod_line *line;
+#endif
     };
 
     volatile bool interruptsEnabled = true;
     pthread_mutex_t intMutex = PTHREAD_MUTEX_INITIALIZER;
 
     pthread_t *threadIds[GPIOD_MAX_LINE_DEFINITIONS];
+#ifdef LIBGPIOD_V2
+    struct gpiod_line_request *intLineRequests[GPIOD_MAX_LINE_DEFINITIONS];
+#endif
     int sysFds[GPIOD_MAX_LINE_DEFINITIONS];
 
     int piHiPri(const int pri);

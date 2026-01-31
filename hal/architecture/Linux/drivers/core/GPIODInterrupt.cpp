@@ -39,12 +39,24 @@ GPIODInterruptClass GPIODInterrupt = GPIODInterruptClass();
 
 GPIODInterruptClass::GPIODInterruptClass()
 {
-    memset(threadIds, NULL, sizeof(threadIds));
+    memset(threadIds, 0, sizeof(threadIds));
     memset(sysFds, -1, sizeof(sysFds));
+#ifdef LIBGPIOD_V2
+    memset(intLineRequests, 0, sizeof(intLineRequests));
+#endif
 }
 
 GPIODInterruptClass::~GPIODInterruptClass()
 {
+#ifdef LIBGPIOD_V2
+    for (int i = 0; i < GPIOD_MAX_LINE_DEFINITIONS; ++i)
+    {
+        if (intLineRequests[i] != NULL)
+        {
+            gpiod_line_request_release(intLineRequests[i]);
+        }
+    }
+#endif
 }
 
 /*
@@ -74,7 +86,11 @@ void *GPIODInterruptClass::interruptHandler(void *args)
     int fd;
     struct ThreadArgs *arguments = (struct ThreadArgs *)args;
     int pin = arguments->pin;
+#ifdef LIBGPIOD_V2
+    struct gpiod_line_request *line_request = arguments->line_request;
+#else
     struct gpiod_line *line = arguments->line;
+#endif
     void (*func)() = arguments->func;
     delete arguments;
 
@@ -86,6 +102,58 @@ void *GPIODInterruptClass::interruptHandler(void *args)
         return NULL;
     }
 
+#ifdef LIBGPIOD_V2
+    struct gpiod_edge_event_buffer *event_buffer = gpiod_edge_event_buffer_new(1);
+    if (event_buffer == NULL)
+    {
+        logError("GPIODInterruptClass::interruptHandler: Failed to create event buffer\n");
+        return NULL;
+    }
+
+    while (1)
+    {
+        // Wait for event
+        int ret = gpiod_line_request_wait_edge_events(line_request, -1);
+        if (ret < 0)
+        {
+            logError("GPIODInterruptClass::interruptHandler: Error waiting for interrupt: %s\n", strerror(errno));
+            break;
+        }
+
+        // Read the event
+        ret = gpiod_line_request_read_edge_events(line_request, event_buffer, 1);
+        if (ret < 0)
+        {
+            logError("GPIODInterruptClass::interruptHandler: Error reading edge event: %s\n", strerror(errno));
+            continue;
+        }
+
+#ifdef MY_DEBUG_VERBOSE_CORE
+        struct gpiod_edge_event *event = gpiod_edge_event_buffer_get_event(event_buffer, 0);
+        if (gpiod_edge_event_get_event_type(event) == GPIOD_EDGE_EVENT_RISING_EDGE)
+        {
+            logInfo("GPIODInterruptClass::interruptHandler: RISING Edge on pin %d\n", pin);
+        }
+        else
+        {
+            logInfo("GPIODInterruptClass::interruptHandler: FALLING Edge on pin %d\n", pin);
+        }
+#endif
+        pthread_mutex_lock(&GPIODInterrupt.intMutex);
+        if (GPIODInterrupt.interruptsEnabled)
+        {
+            pthread_mutex_unlock(&GPIODInterrupt.intMutex);
+            func();
+        }
+        else
+        {
+            pthread_mutex_unlock(&GPIODInterrupt.intMutex);
+        }
+    }
+
+    gpiod_edge_event_buffer_free(event_buffer);
+    gpiod_line_request_release(line_request);
+#else
     while (1)
     {
         // Wait for it ...
@@ -124,6 +192,7 @@ void *GPIODInterruptClass::interruptHandler(void *args)
     }
 
     gpiod_line_release(line);
+#endif
     close(fd);
 
     return NULL;
@@ -143,6 +212,95 @@ void GPIODInterruptClass::attachInterrupt(uint8_t pin, void (*func)(), uint8_t m
         usleep(1000);
     }
 
+#ifdef LIBGPIOD_V2
+    // Release any existing interrupt request for this pin
+    if (intLineRequests[pin] != NULL)
+    {
+        gpiod_line_request_release(intLineRequests[pin]);
+        intLineRequests[pin] = NULL;
+    }
+
+    // Release any existing GPIOD request for this pin (e.g., from pinMode called before attachInterrupt)
+    if (GPIOD.line_requests[pin] != NULL)
+    {
+        gpiod_line_request_release(GPIOD.line_requests[pin]);
+        GPIOD.line_requests[pin] = NULL;
+    }
+
+    struct gpiod_line_settings *settings = gpiod_line_settings_new();
+    if (settings == NULL)
+    {
+        logError("GPIODInterruptClass::attachInterrupt: Failed to create line settings for pin %d\n", pin);
+        exit(1);
+    }
+
+    gpiod_line_settings_set_direction(settings, GPIOD_LINE_DIRECTION_INPUT);
+
+    switch (mode)
+    {
+    case CHANGE: gpiod_line_settings_set_edge_detection(settings, GPIOD_LINE_EDGE_BOTH); break;
+    case FALLING: gpiod_line_settings_set_edge_detection(settings, GPIOD_LINE_EDGE_FALLING); break;
+    case RISING: gpiod_line_settings_set_edge_detection(settings, GPIOD_LINE_EDGE_RISING); break;
+    case NONE: break;
+    default:
+        gpiod_line_settings_free(settings);
+        logError("GPIODInterruptClass::attachInterrupt: Invalid mode\n");
+        return;
+    }
+
+    struct gpiod_line_config *line_cfg = gpiod_line_config_new();
+    if (line_cfg == NULL)
+    {
+        gpiod_line_settings_free(settings);
+        logError("GPIODInterruptClass::attachInterrupt: Failed to create line config for pin %d\n", pin);
+        exit(1);
+    }
+
+    unsigned int offsets[] = {pin};
+    if (gpiod_line_config_add_line_settings(line_cfg, offsets, 1, settings) != 0)
+    {
+        gpiod_line_settings_free(settings);
+        gpiod_line_config_free(line_cfg);
+        logError("GPIODInterruptClass::attachInterrupt: Failed to add line settings for pin %d\n", pin);
+        exit(1);
+    }
+
+    struct gpiod_request_config *req_cfg = gpiod_request_config_new();
+    if (req_cfg == NULL)
+    {
+        gpiod_line_settings_free(settings);
+        gpiod_line_config_free(line_cfg);
+        logError("GPIODInterruptClass::attachInterrupt: Failed to create request config for pin %d\n", pin);
+        exit(1);
+    }
+    gpiod_request_config_set_consumer(req_cfg, "gpiointerrupt");
+
+    intLineRequests[pin] = gpiod_chip_request_lines(GPIOD.chip, req_cfg, line_cfg);
+
+    gpiod_request_config_free(req_cfg);
+    gpiod_line_config_free(line_cfg);
+    gpiod_line_settings_free(settings);
+
+    if (intLineRequests[pin] == NULL)
+    {
+        logError("GPIODInterruptClass::attachInterrupt: Unable to register event listener on pin %d: %s\n", pin, strerror(errno));
+        exit(1);
+    }
+
+    if (sysFds[pin] == -1)
+    {
+        if ((sysFds[pin] = gpiod_line_request_get_fd(intLineRequests[pin])) < 0)
+        {
+            logError("Error reading pin %d: %s\n", pin, strerror(errno));
+            exit(1);
+        }
+    }
+
+    struct ThreadArgs *threadArgs = new struct ThreadArgs;
+    threadArgs->func = func;
+    threadArgs->pin = pin;
+    threadArgs->line_request = intLineRequests[pin];
+#else
     if (GPIOD.gpiod_lines[pin] != NULL)
     {
         gpiod_line_release(GPIOD.gpiod_lines[pin]);
@@ -179,6 +337,7 @@ void GPIODInterruptClass::attachInterrupt(uint8_t pin, void (*func)(), uint8_t m
     threadArgs->func = func;
     threadArgs->pin = pin;
     threadArgs->line = line;
+#endif
 
     // Create a thread passing the pin and function
     pthread_create(threadIds[pin], NULL, &GPIODInterruptClass::interruptHandler, (void *)threadArgs);
@@ -200,6 +359,14 @@ void GPIODInterruptClass::detachInterrupt(uint8_t pin)
         close(sysFds[pin]);
         sysFds[pin] = -1;
     }
+
+#ifdef LIBGPIOD_V2
+    if (intLineRequests[pin] != NULL)
+    {
+        gpiod_line_request_release(intLineRequests[pin]);
+        intLineRequests[pin] = NULL;
+    }
+#endif
 }
 
 void GPIODInterruptClass::interrupts()
