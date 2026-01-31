@@ -133,10 +133,14 @@ static uint16_t hwReadADCChannel(uint32_t channel, bool enableInternalPath)
     LL_ADC_REG_SetSequencerLength(ADC1, LL_ADC_REG_SEQ_SCAN_DISABLE);
     LL_ADC_REG_SetSequencerRanks(ADC1, LL_ADC_REG_RANK_1, channel);
 
+    // Set software trigger (required for STM32F1)
+    LL_ADC_REG_SetTriggerSource(ADC1, LL_ADC_REG_TRIG_SOFTWARE);
+
     // Start conversion
     LL_ADC_REG_StartConversionSWStart(ADC1);
 
     // Wait for conversion complete
+    // Note: On STM32F1, LL_ADC_IsActiveFlag_EOS checks the EOC bit (no separate EOS on F1)
     while (!LL_ADC_IsActiveFlag_EOS(ADC1)) {}
 
     // Read result
